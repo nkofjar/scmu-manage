@@ -583,6 +583,11 @@ model JptTariff {
   description String
   category String
   size String?
+  rateType String?
+  routeOrigin String?
+  routeDestination String?
+  vehicleNumber String?
+  version Int @default(1)
   carrierName String?
   unit String
   unitPrice Decimal @db.Decimal(18, 2)
@@ -596,7 +601,22 @@ model JptTariff {
   notes String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  @@index([category, rateType, size, effectiveFrom, effectiveTo], map: "jpt_tariffs_driver_lookup_idx")
   @@map("jpt_tariffs")
+}
+
+model DriverRateScheme {
+  id String @id @default(uuid())
+  code String @unique
+  name String
+  size String
+  rb Int
+  rk Int
+  enabled Boolean @default(true)
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@map("driver_rate_schemes")
 }
 
 model JobCharge {

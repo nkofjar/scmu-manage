@@ -24,9 +24,9 @@ export function ApprovalToast() {
 }
 export default function DirectorApprovals({ jobId, onChange }) {
   const { user, isSuperAdmin } = useAuth(); const { t, locale } = useLanguage(); const director = isSuperAdmin();
-  const [query, setQuery] = usePageQuery(); const status = query.get('approvalStatus') === 'all' ? '' : query.get('approvalStatus') || (jobId || !director ? '' : 'SUBMITTED'); const setStatus = status => setQuery({ approvalStatus: status || 'all',approvalPage:null });
+  const [query, setQuery] = usePageQuery(); const status = query.get('approvalStatus') === 'all' ? '' : query.get('approvalStatus') || (jobId || !director ? '' : 'SUBMITTED'); const search=query.get('search')||''; const setStatus = status => setQuery({ approvalStatus: status || 'all',approvalPage:null });
   const [selected, setSelected] = useState(null); const [dialog, setDialog] = useState(null); const [form, setForm] = useState({});
-  const resource = usePagedResource('/approvals', {jobId,status}, 'approval');
+  const resource = usePagedResource('/approvals', {jobId,status,search}, 'approval');
   useEffect(() => { const listener = () => resource.reload(); window.addEventListener('scmu-approval-change', listener); return () => window.removeEventListener('scmu-approval-change', listener); }, [resource.reload]);
   const rows = resource.rows; const current = rows.find(row => row.id === selected);
   const open = (type, row) => { const now = new Date(); setSelected(row.id); setDialog({ type, row }); setForm({ decision: 'APPROVED', note: '', paidAt: new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16), notes: row.payload.notes || '' }); };
@@ -43,9 +43,9 @@ export default function DirectorApprovals({ jobId, onChange }) {
     return t(String(raw));
   };
   return <div className="space-y-5"><div><h2 className="text-xl font-semibold text-zinc-100">{t('Director approvals')}</h2><p className="mt-1 text-sm text-zinc-400">{t('Admin submits. The director approves, returns for revision, or rejects. Approved payments still require recording the actual payment.')}</p></div>
-    <select className="input-field max-w-xs" aria-label={t('Approval status')} value={status} onChange={event => { setStatus(event.target.value); setSelected(null); }}><option value="">{t('All Status')}</option>{['SUBMITTED','APPROVED','RETURNED','REJECTED','WITHDRAWN'].map(item => <option key={item} value={item}>{t(item)}</option>)}</select>
+    <div className="flex flex-wrap gap-3"><input className="input-field flex-1 min-w-64" type="search" aria-label={t('Search approvals')} placeholder={t('Cari pengiriman, bon, rekap, kontainer, atau nominal')} value={search} onChange={event=>setQuery({search:event.target.value,approvalPage:null})}/><select className="input-field max-w-xs" aria-label={t('Approval status')} value={status} onChange={event => { setStatus(event.target.value); setSelected(null); }}><option value="">{t('All Status')}</option>{['SUBMITTED','APPROVED','RETURNED','REJECTED','WITHDRAWN'].map(item => <option key={item} value={item}>{t(item)}</option>)}</select></div>
     <ResourceState resource={resource}><DataTable rows={rows} pagination={resource.pagination} columns={[
-      { key: 'action', label: 'Approval type', render: row => t(row.action) }, { key: 'target', label: 'Reference', render: row => row.snapshot.overview.find(field => ['Internal reference','Job order','Quotation #','RFQ #','Invoice #','BL number','Original filename'].includes(field.label))?.value || '—' },
+      { key: 'action', label: 'Approval type', render: row => t(row.action) }, { key: 'journey', label: 'Pengiriman', primary:true, render: row => row.journey || row.reference || '—' }, { key: 'reference', label: 'Bon / rekap', render: row => row.reference || '—' }, { key: 'container', label: 'Kontainer', render: row => row.container || '—' }, { key: 'amount', label: 'Nominal', align:'right', render: row => row.amount==null?'—':formatMoney(row.amount,'IDR',locale) },
       { key: 'requestedBy', label: 'Requested by', render: row => row.requestedBy?.name }, { key: 'createdAt', label: 'Submitted at', render: row => formatDate(row.createdAt, locale, true) }, { key: 'status', label: 'Status', render: row => <><StatusBadge status={row.status} />{row.executedAt && row.action === 'PAYMENT_AUTHORIZE' && <p className="text-xs text-emerald-300 mt-1">{t('Payment recorded')}</p>}</> },
       { key: 'actions', label: 'Actions', items:[{key:'view',label:'View',onClick:row=>setSelected(row.id)}] },
     ]} /></ResourceState>

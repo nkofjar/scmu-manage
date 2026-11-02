@@ -38,6 +38,21 @@ test('optional packing and supporting uploads retain every version without chang
   assert.deepEqual(bill.files.map(row=>row.category),['PACKING_LIST','SUPPORTING','PACKING_LIST']);
 });
 
+test('payment proof uploads retain metadata and history without invalidating the matched BL or carrier release',async()=>{
+  const {bill,tx,writes}=store();
+  await sea.attach(tx,{id:'admin'},'job','bill',{
+    version:1,category:'PAYMENT_PROOF',externalNumber:'PAY-001',documentDate:'2026-10-01',note:'Customer payment receipt'
+  },upload);
+  assert.equal(bill.version,2);assert.equal(bill.contentVersion,3);
+  assert.equal(bill.internalStatus,'SEA_MATCHED');assert.equal(bill.reviewedContentVersion,3);
+  assert.equal(bill.releaseStatus,'SEA_RELEASE_CONFIRMED');assert.equal(bill.releaseProofId,'release');
+  assert.equal(bill.files.length,1);assert.equal(bill.files[0].category,'PAYMENT_PROOF');
+  assert.equal(bill.files[0].externalNumber,'PAY-001');
+  assert.equal(bill.files[0].documentDate.toISOString(),'2026-10-01T00:00:00.000Z');
+  assert.equal(bill.files[0].note,'Customer payment receipt');
+  assert.equal(writes.documents.length,0);assert.equal(writes.revisions.length,1);assert.equal(writes.audit.length,1);
+});
+
 test('legacy attach rejects archived register records before writing files',async()=>{
   for (const category of ['FINAL','PACKING_LIST']) {
     const {bill,tx,writes}=store();bill.registerData={archivedAt:'2026-10-25T00:00:00.000Z'};
@@ -112,6 +127,32 @@ test('register uploads use secure multipart storage, keep attachment history and
     } finally {for(const name of names)await jobFiles.removeFile(name);}
   });
 });
+test('register supporting evidence uploads are returned on reload without changing BL review or release',async()=>{
+  await httpFixture(async({bill,writes,root})=>{
+    try {
+      for(const category of ['PAYMENT_PROOF','RELEASE','SUPPORTING','RECEIVING_REPORT','DELIVERY_ORDER','INVOICE','MANIFEST','WAYBILL','TAX_INVOICE','PPH23_CERTIFICATE']) {
+        const data=multipart(category,String(bill.version));
+        data.set('externalNumber',`${category}-001`);data.set('documentDate','2026-10-01');
+        const response=await fetch(`${root}/api/bl-register/bill/files`,{method:'POST',headers:{'x-role':'ADMIN'},body:data});
+        const body=await response.json();
+        assert.equal(response.status,201,`${category}: ${JSON.stringify(body)}`);
+        assert.equal(body.version,bill.version);assert.equal(body.data[0].category,category);
+        const reload=await fetch(`${root}/api/bl-register/bill/files`,{headers:{'x-role':'ADMIN'}});
+        assert.equal(reload.status,200);const saved=await reload.json();
+        const attached=saved.data.find(row=>row.id===body.data[0].id);
+        assert.equal(saved.version,bill.version);assert.equal(attached.category,category);
+        assert.equal(attached.externalNumber,`${category}-001`);
+        assert.equal(attached.documentDate,'2026-10-01T00:00:00.000Z');
+        assert.equal(attached.filename,undefined);
+        assert.match(await fs.readFile(jobFiles.filePath(bill.files[0].filename),'utf8'),/^%PDF-/);
+      }
+      assert.equal(bill.contentVersion,3);assert.equal(bill.internalStatus,'SEA_MATCHED');
+      assert.equal(bill.reviewedContentVersion,3);assert.equal(bill.releaseStatus,'SEA_RELEASE_CONFIRMED');
+      assert.equal(bill.releaseProofId,'release');assert.equal(writes.documents.length,0);
+      assert.equal(writes.revisions.length,bill.files.length);assert.equal(writes.audit.length,bill.files.length);
+    } finally {for(const file of bill.files)await jobFiles.removeFile(file.filename);}
+  });
+});
 test('staff download checks ownership for attachment, legacy BL and packing original and streams actual bytes',async()=>{
   await httpFixture(async({bill,root})=>{
     const name=`test-${require('node:crypto').randomUUID()}.pdf`;
@@ -140,7 +181,7 @@ test('failed multipart attempts leave no new files and reject stale versions, ar
     const before=(await fs.readdir(directory)).sort();
     for(const [role,category,version,bytes,status] of [
       [null,'PACKING_LIST','1','%PDF-test',401],['MARKETING','PACKING_LIST','1','%PDF-test',403],
-      ['ADMIN','RELEASE','1','%PDF-test',422],['ADMIN','PACKING_LIST','2','%PDF-test',409],
+      ['ADMIN','UNSUPPORTED','1','%PDF-test',422],['ADMIN','PACKING_LIST','2','%PDF-test',409],
       ['ADMIN','PACKING_LIST','1','not PDF',415],['ADMIN','PACKING_LIST','','%PDF-test',422]
     ]) {
       const response=await fetch(`${root}/api/bl-register/bill/files`,{method:'POST',headers:role?{'x-role':role}:{},body:multipart(category,version,bytes)});

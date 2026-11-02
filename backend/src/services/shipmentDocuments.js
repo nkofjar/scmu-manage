@@ -34,6 +34,7 @@ async function remove(tx, user, id, fileId, body) {
   const aliases = (bill.files || []).filter(f => f.filename === selected.filename);
   const linkedPackings = (bill.allocations || []).filter(a => a.packingList?.document?.filename === selected.filename);
   const removedIds = new Set([fileId, ...aliases.map(f => f.id), ...linkedPackings.map(a => a.packingList.document.id)]);
+  if(bill.journeyId){const parent=await tx.shippingJourney.findUnique({where:{id:bill.journeyId}});if(parent){const ops=require('./driverOperations');fail(![...removedIds].some(id=>ops.references(ops.state(parent),id)),'Lampiran masih digunakan sebagai bukti pekerjaan atau pembayaran sopir.',409);}}
   const categories = new Set([selected.category, ...aliases.map(f => f.category)]);
   const linkedPacking = selected.source === 'LINKED_PACKING' || linkedPackings.length > 0;
   const activeBL = selected.source === 'LEGACY_BL' || bill.document?.filename === selected.filename || aliases.some(f => ['DRAFT', 'FINAL'].includes(f.category) && f.contentVersion === bill.contentVersion);

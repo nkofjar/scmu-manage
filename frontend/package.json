@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node --test src/i18n/language.test.mjs src/components/Layout/navigation.test.mjs src/components/common/paginationState.test.mjs src/pages/BL/registerModel.test.mjs src/pages/BL/partnerSummaryPrint.test.mjs src/pages/BL/voyagePackingPrint.test.mjs src/pages/BL/documentBatchModel.test.mjs src/pages/Shipments/journeyImportModel.test.mjs && node ../scripts/test-register-unified-render.mjs && node ../scripts/test-workspace-tables-render.mjs",
+    "test": "node --test src/i18n/language.test.mjs src/components/Layout/navigation.test.mjs src/components/common/paginationState.test.mjs src/pages/BL/registerModel.test.mjs src/pages/BL/partnerSummaryPrint.test.mjs src/pages/BL/voyagePackingPrint.test.mjs src/pages/BL/documentBatchModel.test.mjs src/pages/Shipments/journeyImportModel.test.mjs src/pages/Shipments/documentOwnership.test.mjs && node ../scripts/test-register-unified-render.mjs && node ../scripts/test-workspace-tables-render.mjs",
     "test:tables": "node ../scripts/test-workspace-tables-render.mjs && node ../scripts/test-workspace-tables-browser.mjs",
     "test:ux": "node ../scripts/test-workspace-ux.mjs",
     "test:language": "node ../scripts/test-language-render.mjs",

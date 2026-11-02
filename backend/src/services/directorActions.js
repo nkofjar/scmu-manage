@@ -11,6 +11,7 @@ const table = (title, columns, rows) => ({ title, columns: columns.map(([key, la
 const basics = job => fields([['Job order', job.jobNumber], ['Job type', job.jobType], ['Route', `${job.originCity} → ${job.destCity}`], ['Currency', job.currency]]);
 
 async function loadAction(tx, action, entityId, body = {}) {
+  if (action === 'DRIVER_QUOTA_CHANGE') return require('./driverOperations').quotaContext(tx, entityId, body);
   let raw; let payload = {}; let jobId = null; let overview = []; let tables = []; let targetUrl = ''; let scopeSuffix = '';
   if (['PACKING_FINALIZE', 'PACKING_EXCEPTION'].includes(action)) {
     raw = await tx.packingList.findUnique({ where: { id: entityId }, include: packingInclude }); requireDraft(raw, body.version);
@@ -74,6 +75,8 @@ async function loadAction(tx, action, entityId, body = {}) {
       }
     }
     overview = [...basics(job), ...fields([['Pengiriman',raw.journeyContext?.number],['Kapal',raw.journeyContext?.vesselName],['Voyage',raw.journeyContext?.voyageNumber],['Periode',raw.journeyContext?.period],['Charge type', raw.kind], ['Description', raw.description], ['Cost source', raw.costSource], ['Cost category', raw.costCategory], ['Vendor', raw.vendor?.name], ['Estimated amount', raw.estimatedAmount], ['Proposed actual amount', payload.actualAmount], ['Notes', raw.notes]])];
+    if(raw.tariffSnapshot?.driverPayrollSnapshot){const s=raw.tariffSnapshot.driverPayrollSnapshot;overview.push(...fields([['Nama sopir',s.driverName],['Periode upah',s.periodFrom+' — '+s.periodTo]]));tables.push(table('Pekerjaan dan snapshot upah',[['number','Nomor bon'],['containerNumber','Kontainer'],['rateType','RB/RK'],['proofReference','Nomor bukti serah terima'],['quantity','Jumlah rit'],['unitPrice','Tarif per rit'],['amount','Jumlah']],s.lines));targetUrl=`/shipments/${s.journeyId}?tab=driver-bons`;}
+    if(raw.tariffSnapshot?.driverRateSnapshot){const s=raw.tariffSnapshot.driverRateSnapshot;overview.push(...fields([['Skema tarif',s.planLabel],['Realisasi RB',s.rbCount],['Realisasi RK',s.rkCount],['Tanggal tarif',s.input.date],['Rute bon',s.input.origin+' → '+s.input.destination]]));tables.push(table('Snapshot tarif sopir',[['code','Kode tarif'],['rateType','RB/RK'],['quantity','Jumlah'],['unit','Satuan'],['unitPrice','Harga satuan'],['amount','Total']],s.lines));}
   } else if (action === 'VENDOR_AWARD') {
     const quote = await tx.quote.findUnique({ where: { id: entityId }, include: { transporter: true } }); fail(quote, 'Quote not found', 404);
     const rfq = await tx.rFQ.findUnique({ where: { id: quote.rfqId }, include: { quotes: { include: { transporter: { select: { name: true } } }, orderBy: { id: 'asc' } } } });
@@ -117,6 +120,7 @@ async function loadAction(tx, action, entityId, body = {}) {
 async function applyAction(tx, user, approval, context) {
   const { raw, payload, jobId } = context; let result;
   switch (approval.action) {
+    case 'DRIVER_QUOTA_CHANGE': result = await require('./driverOperations').approveQuota(tx, user, approval); break;
     case 'PACKING_FINALIZE': case 'PACKING_EXCEPTION':
       await tx.jobDocument.update({ where: { id: raw.documentId }, data: { status: 'VERIFIED', verifiedById: user.id } });
       result = await tx.packingList.update({ where: { id: raw.id }, data: { status: 'FINAL', finalizedById: user.id, finalizedAt: new Date(), version: { increment: 1 } } });

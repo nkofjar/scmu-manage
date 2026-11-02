@@ -21,5 +21,7 @@ try{
  const inline=render({rows,actionPlacement:'row',columns:[{key:'name',label:'Nama'},{key:'actions',label:'Tindakan',items:[{key:'view',label:'Detail',href:row=>'/record/'+row.id}]}]});
  assert(!inline.includes('data-table-toolbar'));assert(!inline.includes('data-column="__selection"'));
  assert.equal((inline.match(/data-column="actions"/g)||[]).length,5);assert(inline.includes('href="/record/r0"')&&inline.includes('href="/record/r4"'));
+ const conditional=render({rows,actionPlacement:'row',columns:[{key:'name',label:'Nama'},{key:'actions',label:'Tindakan',items:[{key:'verify',label:'VERIFY_ONLY_R0',hidden:r=>r.id!=='r0',onClick:()=>{}}]}]});
+ assert.equal((conditional.match(/VERIFY_ONLY_R0/g)||[]).length,1,'Only eligible rows show status-specific actions');
  console.log('PASS server-page ordinals, existing No. deduplication, non-paginated numbering, grouped header alignment, empty rows and action/data separation');
 }finally{await server.close();}

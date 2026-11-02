@@ -18,6 +18,7 @@ router.get('/:id/workspace',route(async(req,res)=>res.json(await transaction(tx=
 router.put('/:id/workspace',route(async(req,res)=>res.json(await transaction(tx=>require('../services/blWorkspace').update(tx,req.user,req.params.id,req.body)))));
 router.post('/:id/operational-costs',route(async(req,res)=>res.status(201).json(await transaction(tx=>require('../services/blWorkspace').createCost(tx,req.user,req.params.id,req.body)))));
 router.get('/:id/driver-bons',route(async(req,res)=>res.json(await require('../services/driverBons').list(prisma,req.params.id))));
+router.post('/:id/driver-bons/estimate',route(async(req,res)=>res.json(await transaction(async tx=>{const bill=await register.get(tx,req.params.id);await require('../services/seaBills').getBill(tx,bill.jobId,bill.id,req.body.version);return require('../services/driverTariffs').estimate(tx,req.body.bon,bill);}))));
 router.post('/:id/driver-bons',route(async(req,res)=>res.status(201).json(await transaction(tx=>require('../services/driverBons').save(tx,req.user,req.params.id,null,req.body)))));
 router.put('/:id/driver-bons/:bonId',route(async(req,res)=>res.json(await transaction(tx=>require('../services/driverBons').save(tx,req.user,req.params.id,req.params.bonId,req.body)))));
 router.post('/:id/driver-bons/:bonId/cost',route(async(req,res)=>res.status(201).json(await transaction(tx=>require('../services/driverBons').proposeCost(tx,req.user,req.params.id,req.params.bonId,req.body)))));

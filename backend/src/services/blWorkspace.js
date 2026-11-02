@@ -122,7 +122,7 @@ async function createCost(tx, user, id, body, context = {}) {
   const evidenceFileId = optionalText(body.evidenceFileId, 'Evidence file', 100);
   fail(!evidenceFileId || bill.files.some(file => file.id === evidenceFileId), 'Select an attached evidence file');
   const line = { description: text(body.description, 'Description', 300), quantity: quantity.toFixed(4), unit: text(body.unit || 'JOB', 'Unit', 30), unitPrice: unitPrice.toFixed(2), amount: amount.toFixed(2), vatIncluded: Boolean(body.vatIncluded), vatRate: optionalText(body.vatRate, 'VAT rate', 20), pph23Applicable: Boolean(body.pph23Applicable) };
-  const snapshot = json({ billId: id, type: 'OPERATIONAL_COST', line, evidenceFileId, currency: 'IDR', ...(context.driverBonId?{driverBonId:context.driverBonId}: {}) });
+  const snapshot = json({ billId: id, type: 'OPERATIONAL_COST', line, evidenceFileId, currency: 'IDR', ...(context.driverBonId?{driverBonId:context.driverBonId}: {}),...(context.driverRateSnapshot?{driverRateSnapshot:context.driverRateSnapshot}:{}) });
   const charge = await tx.jobCharge.create({ data: { jobId: bill.jobId, shipmentId: null, kind: 'COST', status: 'PROPOSED', ...(context.driverBonId?{tariffKey:'BONRATE:'+context.driverBonId}:{}), ...fields, description: line.description, estimatedAmount: amount, tariffSnapshot: snapshot, notes: optionalText(body.notes, 'Cost notes', 2000), createdById: user.id } });
   const approval = await require('./director').submit(tx, user, 'CHARGE_APPROVE', charge.id, { actualAmount: amount.toFixed(2) }, 'Operational cost recorded from the B/L workspace.');
   await tx.seaBill.update({ where: { id }, data: { version: { increment: 1 } } });

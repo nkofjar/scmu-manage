@@ -20,7 +20,7 @@ router.post('/:id/files', authorize(...OPERATORS), uploadLimiter, route(async (r
   try {
     await new Promise((resolve, reject) => files.uploadAny(req, res, error => error ? reject(error) : resolve()));
     await files.validateAttachment(req.file);
-    fail(['DRAFT','FINAL','PACKING_LIST','INTERNAL_PACKING_LIST','PACKING_HEADER','RECEIVING_REPORT','INVOICE','DELIVERY_ORDER','MANIFEST','WAYBILL','POD','TAX_INVOICE','PPH23_CERTIFICATE','DRIVER_BON','SUPPORTING'].includes(req.body.category), 'Register attachment category is invalid');
+    fail(['DRAFT','FINAL','RELEASE','PACKING_LIST','INTERNAL_PACKING_LIST','PACKING_HEADER','RECEIVING_REPORT','INVOICE','DELIVERY_ORDER','MANIFEST','WAYBILL','POD','TAX_INVOICE','PPH23_CERTIFICATE','DRIVER_BON','PAYMENT_PROOF','SUPPORTING'].includes(req.body.category), 'Register attachment category is invalid');
     const result = await transaction(async tx => {
       await sea.attach(tx, req.user, before.jobId, before.id, req.body, req.file);
       return getRecord(tx, before.id);

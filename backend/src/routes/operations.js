@@ -26,13 +26,6 @@ router.get('/packing-lists', route(async (req,res) => {
   res.json({...meta,data});
 }));
 
-router.get('/billing', route(async (req,res) => {
-  const { page, limit } = pageOptions(req.query); const search=String(req.query.search||'').trim();
-  const where={archivedAt:null,...(search&&{OR:[{billNumber:{contains:search,mode:'insensitive'}},{carrierName:{contains:search,mode:'insensitive'}},{registerIdentity:{contains:search,mode:'insensitive'}}]})};
-  const total=await prisma.seaBill.count({where});const meta=pageMeta(total,{page,limit});
-  const rows=await prisma.seaBill.findMany({where,select:{id:true,billNumber:true,vesselName:true,voyageNumber:true,carrierName:true,registerAmount:true,registerData:true,files:{select:{category:true}}},orderBy:[{createdAt:'desc'},{id:'desc'}],skip:(meta.page-1)*meta.limit,take:meta.limit});
-  const data=rows.map(row=>{const book=row.registerData?.register||{};const gross=row.registerAmount==null?null:new Prisma.Decimal(row.registerAmount);const pph=book.pph23Applicable&&gross?gross.mul('0.02'):null;return {id:row.id,billNumber:row.billNumber,vesselName:row.vesselName,voyageNumber:row.voyageNumber,carrierName:row.carrierName,vendorName:book.partyName,responsibleParty:book.partyText,internalNumber:book.reference1,invoiceNumber:book.reference2,invoiceDate:book.additionalDate1,dueDate:book.additionalDate2,grossAmount:gross?.toFixed(2)||null,pph23Applicable:Boolean(book.pph23Applicable),pph23Amount:pph?.toFixed(2)||null,netPayable:gross?gross.minus(pph||0).toFixed(2):null,billingStatus:book.billingStatus||'NOT_RECEIVED',hasInvoice:row.files.some(file=>file.category==='INVOICE'),hasTaxInvoice:row.files.some(file=>file.category==='TAX_INVOICE'),hasPphCertificate:row.files.some(file=>file.category==='PPH23_CERTIFICATE')};});
-  res.json({...meta,data});
-}));
+router.get('/billing', route(async(req,res)=>res.json(await require('../services/jpt').transaction(tx=>require('../services/billingOverview').list(tx,req.query)))));
 
 module.exports=router;

@@ -17,7 +17,7 @@ import ShipmentProgress from './ShipmentProgress';
 import { isRegisterArchived, isRegisterDeleted } from './registerModel.mjs';
 
 const sections = [
-  { value: 'summary', label: 'Ringkasan', icon: LayoutDashboard, tabs: ['summary'] },
+  { value: 'summary', label: 'Ringkasan & B/L', icon: LayoutDashboard, tabs: ['summary'] },
   { value: 'documents', label: 'Dokumen', icon: Files, tabs: ['documents'] },
   { value: 'packing', label: 'Packing List & Rekap', icon: PackageOpen, tabs: ['packing'] },
   { value: 'driver-bons', label: 'Bonrate Sopir', icon: Truck, tabs: ['driver-bons'] },
@@ -58,9 +58,9 @@ export default function BLWorkspace({ bill: initialBill }) {
       </nav>
       <div id={id + '-panel'} role="tabpanel" aria-labelledby={id + '-tab-' + primary.value} className="min-w-0">
         {subTabs.length > 0 && <div className="bl-subtabs" aria-label={t(primary.label)}>{subTabs.map(([value, label]) => <button key={value} type="button" aria-pressed={tab === value} onClick={() => setTab(value)}>{t(label)}</button>)}</div>}
-        {tab === 'summary' && <BLSummary bill={bill} onNavigate={setTab} />}
+        {tab === 'summary' && <div className="space-y-5"><BLSummary bill={bill} onNavigate={setTab} /><RegisterDocuments key="bl-files" owner="BL" bill={bill} onVersion={reload}/></div>}
         {tab === 'driver-bons' && <DriverBons bill={bill} onChanged={reload} />}
-        {['packing'].includes(tab) && <OperationalWorkspace key={tab} bill={bill} section={tab} onChanged={reload} />}
+        {['packing'].includes(tab) && <div className="space-y-5"><RegisterDocuments key="packing-files" owner="PACKING" bill={bill} onVersion={reload}/><OperationalWorkspace key={tab} bill={bill} section={tab} onChanged={reload} /></div>}
         {tab === 'costs' && <div className="space-y-5"><BillingSummary bill={bill} /><OperationalCosts bill={bill} onChanged={reload} /><details className="card overflow-hidden"><summary className="cursor-pointer select-none px-5 py-4 font-semibold text-zinc-200 hover:bg-zinc-900/60">{t('Tarif pendapatan')}<span className="ml-2 text-xs font-normal text-zinc-500">{t('Buka untuk menghitung tagihan berdasarkan master tarif')}</span></summary><div className="border-t border-zinc-800 p-4"><TariffEstimator bill={bill} onChanged={reload} /></div></details></div>}
         {tab === 'documents' && <div className="space-y-5"><RegisterDocuments bill={bill} onVersion={reload} /><details className="card p-4"><summary className="text-sm cursor-pointer">{t('Batas waktu pelabuhan')}</summary><div className="mt-4"><OperationalWorkspace bill={bill} section="checks" onChanged={reload}/></div></details></div>}
         {tab === 'history' && <section className="space-y-3"><h2 className="font-semibold text-base">{t('Riwayat perubahan')}</h2><Notice message={history.error} /><DataTable rows={history.rows} pagination={history.pagination} empty={t('No activity yet')} columns={[

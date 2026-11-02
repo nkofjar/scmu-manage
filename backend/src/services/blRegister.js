@@ -71,6 +71,7 @@ async function update(tx,user,id,body) {
  const links=await require('./vessels').links(tx,body,before);
  if(before.journeyId){const parent=await tx.shippingJourney.findUnique({where:{id:before.journeyId}});require('./journeys').mutable(parent);fail(require('./journeys').compatible(parent,{...before,...body,...links}),'B/L identity differs from its vessel journey. Check the parent shipment.',409);}
  const ops=normalize(body,before);
+ if(body.containers!==undefined)await require('./driverOperations').assertBillChange(tx,before,ops.containers);
  const recapHash=before.registerData?.internalRecap?.valid?require('./packingRecap').fingerprint(before):null;
  const activeBons=(before.registerData?.driverBons||[]).filter(row=>!['COMPLETED','CANCELLED'].includes(row.status));
  for(const bon of activeBons)fail((bon.containerNumbers||[]).every(n=>ops.containers.some(c=>c.number===n)),`Kontainer masih terhubung ke bonrate ${bon.number}. Perbarui bonrate terlebih dahulu sebelum menghapus atau mengganti nomornya.`,409);

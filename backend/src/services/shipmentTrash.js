@@ -18,6 +18,8 @@ async function dependencies(tx, bill) {
   const activeInvoices = job.invoices.filter(invoice => invoice.status !== 'CANCELLED');
   const activeCharges = job.charges.filter(charge => charge.status !== 'REJECTED');
   const blockers = [];
+  if(bill.journeyId){const parent=await tx.shippingJourney.findUnique({where:{id:bill.journeyId}}),ops=parent&&require('./driverOperations').state(parent);if(ops?.works.some(w=>['SUBMITTED','VERIFIED'].includes(w.status)&&(w.billId===bill.id||(bill.containers||[]).some(c=>require('./driverTariffs').key(c.number)===w.containerKey))))blockers.push({code:'DRIVER_WORK',message:'B/L memuat kontainer untuk pekerjaan angkut yang diproses. Gunakan Arsipkan.'});}
+
   if (activeInvoices.length) blockers.push({ code: 'INVOICE', count: activeInvoices.length, message: 'Masih ada invoice aktif. Selesaikan pembatalan invoice atau gunakan Arsipkan.' });
   if (activeCharges.length) blockers.push({ code: 'CHARGE', count: activeCharges.length, message: 'Masih ada biaya atau pendapatan yang diajukan/disetujui. Selesaikan keterkaitannya atau gunakan Arsipkan.' });
   if (job.payments.length) blockers.push({ code: 'PAYMENT', count: job.payments.length, message: 'Pembayaran sudah tercatat. Gunakan Arsipkan agar riwayat pembayaran tetap terhubung.' });

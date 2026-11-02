@@ -6,13 +6,14 @@ const { submit, review } = require('../services/director');
 const router = express.Router(); router.use(authenticate, authorize(...STAFF));
 async function present(approval, knownUsers) {
   const users = knownUsers || await prisma.user.findMany({ where: { id: { in: [approval.requestedById, approval.reviewedById].filter(Boolean) } }, select: { id: true, name: true } });
-  return { ...approval, snapshot: approval.snapshot.view, requestedBy: users.find(user => user.id === approval.requestedById), reviewedBy: users.find(user => user.id === approval.reviewedById) };
+  return { ...approval, ...require('../services/approvalPresentation').reference(approval), snapshot: approval.snapshot.view, requestedBy: users.find(user => user.id === approval.requestedById), reviewedBy: users.find(user => user.id === approval.reviewedById) };
 }
 router.get('/', route(async (req, res) => {
-  const where = { ...(req.query.status && { status: choice(req.query.status, ['SUBMITTED','APPROVED','RETURNED','REJECTED','WITHDRAWN']) }), ...(req.query.jobId && { jobId: String(req.query.jobId) }), ...(req.query.action && { action: String(req.query.action) }) };
+  const where=await require('../services/approvalPresentation').queryWhere(prisma,req.query);
   const result = await listPage(prisma.directorApproval, { where, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] }, req.query); const rows = result.data;
   const users = await prisma.user.findMany({ where: { id: { in: [...new Set(rows.flatMap(row => [row.requestedById, row.reviewedById].filter(Boolean)))] } }, select: { id: true, name: true } });
-  res.json({ ...result, data: await Promise.all(rows.map(row => present(row, users))) });
+  const kinds=await prisma.directorApproval.findMany({distinct:['action'],select:{action:true}});
+  res.json({ ...result, actions:kinds.map(r=>r.action).sort(), data: await Promise.all(rows.map(row => present(row, users))) });
 }));
 router.post('/', route(async (req, res) => { const row = await transaction(tx => submit(tx, req.user, text(req.body.action, 'Approval action', 100), req.body.entityId, req.body.payload || {}, req.body.note)); res.status(201).json(await present(row)); }));
 router.post('/:id/review', authorize('SUPER_ADMIN'), route(async (req, res) => { const decision = choice(req.body.decision, ['APPROVED','RETURNED','REJECTED'], 'Decision'); const row = await transaction(tx => review(tx, req.user, req.params.id, decision, req.body.note)); res.json(await present(row)); }));

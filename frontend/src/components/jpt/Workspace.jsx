@@ -130,6 +130,7 @@ function TableBody({ columns, columnGroups, rows, empty = 'No records yet', pagi
   const prefix=[...(actions.length?[{key:'__selection',label:'Pilih',className:'sticky left-0 z-10 bg-zinc-950 w-14',render:(row,index)=><input type="checkbox" aria-label={`${t('Pilih baris')} ${offset+index+1}`} checked={selectedKeys.includes(keyOf(row,index))} disabled={paging.loading||Boolean(selection?.max&&!selectedKeys.includes(keyOf(row,index))&&selectedKeys.length>=selection.max)} onChange={event=>pick(row,index,event.target.checked)}/>}]:[]),...(!numbered?[{key:'__rowNumber',label:'No.',className:'w-14 tabular-nums',render:(_row,index)=>offset+index+1}]:[])];
   const tableColumns=[...prefix,...dataColumns];
   const renderActions=(column,row)=>column.items?<div className="flex flex-wrap items-center gap-2">{column.items.map(item=>{
+    if(row&&item.hidden?.(row))return null;
     const disabled=!row||paging.loading||Boolean(item.disabled?.(row));const label=t(typeof item.label==='function'?item.label(row):item.label);
     return item.href&&!disabled?<Link key={item.key||label} className="btn btn-secondary inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm font-medium text-zinc-200" to={item.href(row)}>{label}</Link>:<Button key={item.key||label} type="button" size="sm" variant={item.variant||'secondary'} disabled={disabled} onClick={()=>row&&item.onClick?.(row)}>{label}</Button>;
   })}</div>:row?column.render(row):null;

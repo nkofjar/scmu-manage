@@ -1,15 +1,26 @@
-const { fail, money, sum, text, choice, decimal, date, audit } = require('./jpt');
+const { fail, money, sum, text, choice, decimal, date, audit, integer } = require('./jpt');
 async function save(tx, user, id, body) {
   fail(user.role === 'SUPER_ADMIN', 'Only the director can change tariffs', 403);
   const current = id ? await tx.jptTariff.findUnique({where:{id}}) : {};
   fail(current, 'Tariff not found', 404);
+  if(id&&current.version)fail(integer(body.version,'Versi')===current.version,'Tarif berubah. Muat ulang sebelum menyimpan.',409);
   const data = {...current,...body};
   for (const key of ['vatIncluded','enabled','confirmationRequired']) fail(typeof data[key] === 'boolean', `${key} must be true or false`);
-  const effectiveFrom = date(data.effectiveFrom,true), effectiveTo = date(data.effectiveTo,true);
+  const calendar=value=>require('./registerFields').calendarDate(value instanceof Date?value.toISOString():value);
+  const effectiveFrom = date(calendar(data.effectiveFrom),true), effectiveTo = date(calendar(data.effectiveTo),true);
   fail(!effectiveFrom || !effectiveTo || effectiveFrom<=effectiveTo, 'Effective end must follow start');
-  const fields = {code:text(data.code,'Code',100).toUpperCase(),description:text(data.description,'Description',240),category:text(data.category,'Category',100),size:data.size == null || data.size === '' ? null : choice(data.size,['20','21','40'],'Size'),carrierName:text(data.carrierName,'Carrier',200,true),unit:choice(data.unit,['CONTAINER','BL'],'Unit'),unitPrice:decimal(body.unitPrice === undefined && current.unitPrice != null ? String(current.unitPrice) : body.unitPrice),currency:choice(data.currency,['IDR'],'Currency'),vatIncluded:data.vatIncluded,vatRate:data.vatRate == null || data.vatRate === '' ? null : choice(String(data.vatRate),['1.1'],'VAT rate'),enabled:data.enabled,confirmationRequired:data.confirmationRequired,effectiveFrom,effectiveTo,notes:text(data.notes,'Notes',3000,true)};
+  const fields = {code:text(data.code,'Code',100).toUpperCase(),description:text(data.description,'Description',240),category:text(data.category,'Category',100),size:data.size == null || data.size === '' ? null : choice(data.size,['20','21','40'],'Size'),rateType:data.rateType == null || data.rateType === '' ? null : choice(data.rateType,['RB','RK'],'Rate type'),routeOrigin:text(data.routeOrigin,'Origin route',200,true),routeDestination:text(data.routeDestination,'Destination route',200,true),carrierName:text(data.carrierName,'Carrier',200,true),unit:choice(data.unit,['CONTAINER','BL','RIT'],'Unit'),unitPrice:decimal(body.unitPrice === undefined && current.unitPrice != null ? String(current.unitPrice) : body.unitPrice),currency:choice(data.currency,['IDR'],'Currency'),vatIncluded:data.vatIncluded,vatRate:data.vatRate == null || data.vatRate === '' ? null : choice(String(data.vatRate),['1.1'],'VAT rate'),enabled:data.enabled,confirmationRequired:data.confirmationRequired,effectiveFrom,effectiveTo,notes:text(data.notes,'Notes',3000,true)};
   fail(!fields.confirmationRequired || !fields.enabled, 'Unconfirmed tariffs must remain disabled');
-  const result = id ? await tx.jptTariff.update({where:{id},data:fields}) : await tx.jptTariff.create({data:fields});
+  fields.vehicleNumber=text(data.vehicleNumber,'Kendaraan',80,true)?.toUpperCase()||null;
+  if(fields.category==='DRIVER_BON'){
+    fail(fields.rateType&&['RIT','CONTAINER'].includes(fields.unit)&&fields.unitPrice.gt(0)&&effectiveFrom,'Isi tipe RB/RK, satuan rit/kontainer, harga positif, dan tanggal mulai.');
+    fail(!fields.vatIncluded&&!fields.vatRate&&!fields.carrierName,'Tarif sopir tidak memakai pajak atau pelayaran. Gunakan harga hak sopir.');
+    if(fields.enabled){
+      const key=require('./driverTariffs').key,others=await tx.jptTariff.findMany({where:{category:'DRIVER_BON',enabled:true,confirmationRequired:false,rateType:fields.rateType,...(id?{id:{not:id}}:{})}});
+      fail(!others.some(r=>(r.size||null)===fields.size&&key(r.routeOrigin)===key(fields.routeOrigin)&&key(r.routeDestination)===key(fields.routeDestination)&&key(r.vehicleNumber)===key(fields.vehicleNumber)&&(!r.effectiveTo||!effectiveFrom||new Date(r.effectiveTo)>=effectiveFrom)&&(!effectiveTo||!r.effectiveFrom||effectiveTo>=new Date(r.effectiveFrom))),'Periode tarif aktif dengan cakupan sama bertumpang tindih. Akhiri periode lama atau simpan sebagai draf.',409);
+    }
+  }else fail(!fields.rateType&&fields.unit!=='RIT'&&!fields.vehicleNumber&&!fields.routeOrigin&&!fields.routeDestination,'RB/RK dan rute sopir hanya untuk kategori DRIVER_BON.');
+  const result = id ? await tx.jptTariff.update({where:{id},data:{...fields,version:{increment:1}}}) : await tx.jptTariff.create({data:fields});
   await audit(tx,user,id?'JPT_TARIFF_UPDATED':'JPT_TARIFF_CREATED','JptTariff',result.id,{before:current,after:fields});
   return result;
 }
@@ -21,6 +32,7 @@ function estimate(bill, tariffs, tariffIds) {
   const lines = tariffIds.map(id => {
     const tariff = tariffs.find(row => row.id === id);
     fail(tariff, 'Unknown tariff selected');
+    fail(tariff.category!=='DRIVER_BON'&&['BL','CONTAINER'].includes(tariff.unit),'Tarif sopir digunakan melalui Bonrate, bukan tagihan B/L.');
     fail(tariff.enabled, 'Selected tariff is disabled');
     fail(!tariff.confirmationRequired, 'Selected tariff requires confirmation');
     fail((!tariff.effectiveFrom || new Date(tariff.effectiveFrom)<=now) && (!tariff.effectiveTo || new Date(tariff.effectiveTo)>=now), 'Selected tariff is outside its effective dates');

@@ -9,7 +9,7 @@ import { selectableTariffs } from './registerModel.mjs';
 
 export default function TariffEstimator({bill,onChanged}) {
  const {t,locale}=useBL();const resource=useResource('/jpt-tariffs');const [selected,setSelected]=useState([]);const [estimate,setEstimate]=useState(null);const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [proposed,setProposed]=useState(false);
- const rows=resource.data?.data||[];const allowed=selectableTariffs(rows,bill.containers);const ids=selected.filter(id=>allowed.some(row=>row.id===id));
+ const rows=(resource.data?.data||[]).filter(r=>r.category!=='DRIVER_BON');const allowed=selectableTariffs(rows,bill.containers);const ids=selected.filter(id=>allowed.some(row=>row.id===id));
  const money=value=>formatMoney(value,'IDR',locale);
  const toggle=id=>{setSelected(previous=>previous.includes(id)?previous.filter(value=>value!==id):[...previous,id]);setEstimate(null);setProposed(false);setError('');};
  const run=async propose=>{if(busy)return;if(!ids.length){setError(t('Select at least one tariff.'));return;}setBusy(true);setError('');try{const response=await api.post(`/bl-register/${bill.id}/${propose?'charges':'estimate'}`,{tariffIds:ids,version:bill.version});if(propose){setProposed(true);setEstimate(null);await onChanged?.();}else setEstimate(response.data);}catch(error){setError(error.response?.data?.message||error.message);}finally{setBusy(false);}};

@@ -15,13 +15,13 @@ const types = { BILL_OF_LADING: 'B/L', DELIVERY_ORDER: 'Delivery Order (DO)', PO
 const labels = { vesselName: 'Nama kapal', voyageNumber: 'Nomor voyage', carrierName: 'Pelayaran', shipperName: 'Pengirim pada dokumen', consigneeName: 'Penerima pada dokumen', notifyPartyName: 'Notify party', portOfLoading: 'Pelabuhan asal', portOfDischarge: 'Pelabuhan tujuan', issueDate: 'Tanggal penerbitan B/L' };
 const references = row => row.documentType === 'BILL_OF_LADING' ? [row.fields.billNumber] : row.references.split(/[,;\n]+/).map(v => v.trim()).filter(Boolean);
 
-export default function DocumentBatch({ onSaved, journey, createJourneys=false, onManual, autoOpen=false }) {
+export default function DocumentBatch({ onSaved, journey, createJourneys=false, onManual, autoOpen=false, blOnly=false, buttonLabel }) {
   const { t } = useBL(), { user } = useAuth();
   const [open, setOpen] = useState(false), [phase, setPhase] = useState('CHOOSE');
   const [rows, setRows] = useState([]), [busy, setBusy] = useState(false), [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(''), [review, setReview] = useState(null), [recap, setRecap] = useState(false), [restored, setRestored] = useState(false);
   const [groups,setGroups]=useState([]),[groupConfirmed,setGroupConfirmed]=useState(false);
-  const input = useRef(),autoStarted=useRef(false), storageKey = 'scmu_document_batch_' + user?.id+(createJourneys?'_new_shipments':'');
+  const input = useRef(),autoStarted=useRef(false), storageKey = 'scmu_document_batch_' + user?.id+(createJourneys?'_new_shipments':journey?'_journey_'+journey.id+(blOnly?'_bl':''):'');
   const update = (key, patch) => setRows(old => old.map(row => row.key === key ? { ...row, ...patch } : row));
   useEffect(() => {
     let alive = true; setRestored(false); setRows([]);
@@ -75,6 +75,7 @@ export default function DocumentBatch({ onSaved, journey, createJourneys=false, 
     const selected = rows.filter(row => row.reviewed && !['SAVED', 'REMOVED', 'TRASHED'].includes(row.status)).sort((a, b) => Number(b.documentType === 'BILL_OF_LADING') - Number(a.documentType === 'BILL_OF_LADING'));
     for (const row of selected) {
       try {
+        if(blOnly&&row.documentType!=='BILL_OF_LADING')throw Error(t('Gunakan tab Dokumen untuk berkas pendukung. Bagian ini khusus B/L.'));
         const numbers = references(row), targets = (await api.post('/bl-imports/batch/targets', { numbers })).data;
         if (row.documentType === 'BILL_OF_LADING' && row.action === 'CREATE' && resolveBatchBL(targets, row.fields.billNumber).kind !== 'NEW') {
           update(row.key, { reviewed: false, targets, error: t('Nomor B/L kini sudah tersedia. Periksa kembali untuk menambahkan file ke pengiriman tersebut.') }); continue;
@@ -91,9 +92,9 @@ export default function DocumentBatch({ onSaved, journey, createJourneys=false, 
   };
   const outcome = batchOutcome(rows), ready = rows.filter(row => row.reviewed && !['SAVED', 'REMOVED', 'TRASHED'].includes(row.status)), disabled = busy || refreshing;
   return <>
-    <Button disabled={!restored} onClick={begin}>{t(journey?'Unggah B/L dan dokumen':'Tambah pengiriman')}</Button>
-    {open && <DetailModal title={journey?'Unggah B/L dan dokumen':phase === 'CHOOSE' ? 'Tambah pengiriman' : 'Tambah pengiriman · Unggah dokumen'} onClose={() => !disabled && setOpen(false)} actions={phase === 'UPLOAD' ? <>
-      <Button variant="secondary" disabled={disabled} onClick={() => setPhase('CHOOSE')}>{t('Kembali')}</Button>
+    <Button disabled={!restored} onClick={begin}>{t(buttonLabel||(journey?'Unggah B/L dan dokumen':'Tambah pengiriman'))}</Button>
+    {open && <DetailModal title={blOnly?'Unggah B/L':journey?'Unggah B/L dan dokumen':phase === 'CHOOSE' ? 'Tambah pengiriman' : 'Tambah pengiriman · Unggah dokumen'} onClose={() => !disabled && setOpen(false)} actions={phase === 'UPLOAD' ? <>
+      {!journey&&<Button variant="secondary" disabled={disabled} onClick={() => setPhase('CHOOSE')}>{t('Kembali')}</Button>}
       <Button disabled={disabled || !ready.length} onClick={createJourneys?prepareGroups:commit}>{t(busy ? 'Memproses…' : createJourneys?'Periksa pengelompokan':'Simpan yang diperiksa')} ({ready.length})</Button>
       {outcome.billIds.length > 0 && (!createJourneys||outcome.journeyIds.length===1) && <Button variant="secondary" disabled={disabled} onClick={() => setRecap(true)}>{t('Buat rekap Packing List')}</Button>}
     </> : phase==='GROUP'?<><Button variant="secondary" disabled={disabled} onClick={()=>setPhase('UPLOAD')}>{t('Kembali')}</Button><Button disabled={disabled||!groupConfirmed||!groups.every(journeyGroupValid)||!ready.length} onClick={commit}>{t('Simpan pengiriman dan dokumen')} ({ready.length})</Button></>:null}>
@@ -126,14 +127,14 @@ export default function DocumentBatch({ onSaved, journey, createJourneys=false, 
           ] },
         ]} />
       </div>}
-      {review && <Review row={review} journey={journey} createJourneys={createJourneys} onClose={() => setReview(null)} onConfirm={value => { update(value.key, { ...value, reviewed: true, error: '' }); setReview(null); }} />}
+      {review && <Review row={review} journey={journey} createJourneys={createJourneys} blOnly={blOnly} onClose={() => setReview(null)} onConfirm={value => { update(value.key, { ...value, reviewed: true, error: '' }); setReview(null); }} />}
       {recap && <VoyagePacking initialIds={journey?[...new Set([...journey.bills.filter(b=>!b.archived&&b.billNumber).map(b=>b.id),...outcome.billIds])]:outcome.billIds} onClose={() => setRecap(false)} onSaved={onSaved} />}
     </DetailModal>}
   </>;
 }
 
-function Review({ row, journey, createJourneys, onClose, onConfirm }) {
-  const { t } = useBL(), [value, setValue] = useState(row), [confirmed, setConfirmed] = useState(false), [original, setOriginal] = useState(false);
+function Review({ row, journey, createJourneys, blOnly, onClose, onConfirm }) {
+  const { t } = useBL(), [value, setValue] = useState(()=>blOnly&&!['BILL_OF_LADING','UNKNOWN'].includes(row.documentType)?{...row,documentType:'UNKNOWN'}:row), [confirmed, setConfirmed] = useState(false), [original, setOriginal] = useState(false);
   const [lookup, setLookup] = useState({ loading: true, targets: [], key: '' });
   const change = patch => { setValue(old => ({ ...old, ...patch })); setConfirmed(false); };
   const field = (key, input) => change({ fields: { ...value.fields, [key]: input } });
@@ -150,11 +151,11 @@ function Review({ row, journey, createJourneys, onClose, onConfirm }) {
   const resolution = resolveBatchBL(lookup.targets, value.fields.billNumber), attach = isBL && resolution.kind === 'EXISTING', checking = lookup.loading || lookup.key !== lookupKey;
   const blocked = isBL ? ['AMBIGUOUS', 'READ_ONLY'].includes(resolution.kind) : lookup.targets.some(target => target.bills.length > 1 || target.bills.some(bill => bill.readOnly || bill.archivedAt));
   const wrongJourney=attach&&journey&&resolution.bill.journeyId!==journey.id;
-  const valid = !wrongJourney && value.documentType !== 'UNKNOWN' && (isBL ? value.fields.billNumber?.trim() : value.references.trim()) && (value.documentType !== 'DELIVERY_ORDER' || value.documentNumber && value.documentDate) && !checking && !lookup.error && !blocked;
+  const valid = !wrongJourney && (!blOnly||isBL) && value.documentType !== 'UNKNOWN' && (isBL ? value.fields.billNumber?.trim() : value.references.trim()) && (value.documentType !== 'DELIVERY_ORDER' || value.documentNumber && value.documentDate) && !checking && !lookup.error && !blocked;
   return <DetailModal title="Periksa dokumen unggahan" onClose={onClose} actions={<Button disabled={!confirmed || !valid} onClick={() => onConfirm({ ...value, targets: lookup.targets, action: attach ? 'ATTACH' : 'CREATE' })}>{t('Tandai sudah diperiksa')}</Button>}>
     <div className="space-y-4" data-batch-review>
       <p className="font-medium break-all">{value.originalName}</p><Button variant="secondary" onClick={() => setOriginal(true)}>{t('Lihat file asli')}</Button>
-      <label className="block text-sm">{t('Jenis dokumen')}<select aria-label={t('Jenis dokumen')} className="input-field" value={value.documentType} onChange={event => change({ documentType: event.target.value })}>{Object.entries(types).map(([key, label]) => <option key={key} value={key}>{t(label)}</option>)}</select></label><Notice message={lookup.error||(wrongJourney?t('B/L sudah berada pada pengiriman lain. Buka pengiriman asalnya.'):'')} />
+      <label className="block text-sm">{t('Jenis dokumen')}<select aria-label={t('Jenis dokumen')} className="input-field" value={value.documentType} onChange={event => change({ documentType: event.target.value })}>{Object.entries(types).filter(([key])=>!blOnly||['BILL_OF_LADING','UNKNOWN'].includes(key)).map(([key, label]) => <option key={key} value={key}>{t(label)}</option>)}</select></label><Notice message={lookup.error||(wrongJourney?t('B/L sudah berada pada pengiriman lain. Buka pengiriman asalnya.'):'')} />
       {isBL ? <>
         <label className="block text-sm">{t('Nomor B/L')}<input aria-label={t('Nomor B/L')} className="input-field" value={value.fields.billNumber || ''} maxLength={100} onChange={event => field('billNumber', event.target.value)} /></label>
         <div className="rounded-xl border border-brand-500/25 bg-brand-500/5 p-4 space-y-2" role="status" data-batch-resolution>
