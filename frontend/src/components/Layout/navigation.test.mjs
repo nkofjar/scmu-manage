@@ -10,6 +10,12 @@ test('return navigation accepts only internal SCMU pages, including filtered sou
   assert.equal(detailModule('/jobs'), null);
   assert.equal(pageLabel('/bl-register/trash'),'Sampah pengiriman');assert.equal(detailModule('/bl-register/trash'),null);
 });
+test('delivery masters are valid return destinations with distinct page labels', () => {
+  for (const [path,label] of [['/delivery-routes','Rute pengantaran'],['/goods-types','Muatan']]) {
+    assert.equal(localPage(path+'?page=2'),true);
+    assert.equal(pageLabel(path),label);
+  }
+});
 test('malformed pagination falls back to the first page', () => {
   for (const value of [null,'0','-3','1.5','NaN','Infinity','9007199254740992']) assert.equal(positivePage(value),1);
   assert.equal(positivePage('2'),2);

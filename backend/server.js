@@ -42,6 +42,13 @@ app.use('/api/portal', (req, res) => res.status(404).json({ message: 'Customer p
 app.use('/api', authenticate);
 app.use('/api/bl-register', require('./src/routes/blRegister'));
 app.use('/api/journeys', require('./src/routes/journeys'));
+app.use('/api/journeys', require('./src/routes/journeyBillRecap'));
+app.use('/api/routes', require('./src/routes/routes'));
+app.use('/api/goods', require('./src/routes/goods'));
+app.use('/api/operating-cost-types', require('./src/routes/operatingCostTypes'));
+app.use('/api/driver-trips', require('./src/routes/driverTrips'));
+app.use('/api/fleet', require('./src/routes/fleet'));
+app.use('/api/drivers', require('./src/routes/drivers'));
 app.use('/api/vessels', require('./src/routes/vessels'));
 app.use('/api/bl-imports', require('./src/routes/blImports'));
 app.use('/api/operations', require('./src/routes/operations'));

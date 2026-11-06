@@ -1,6 +1,6 @@
 const modules = {
-  shipments:'Pengiriman',
-  vessels:'Kapal',
+  shipments:'Pengiriman', 'delivery-routes':'Rute pengantaran', 'goods-types':'Muatan',
+  vessels:'Kapal', 'fleet-drivers':'Kendaraan & Sopir', 'driver-trips':'Ritase & Upah',
   'bl-register': 'Pengiriman', 'packing-lists':'Packing List', tariffs:'Tarif & Biaya', 'billing-tax':'Tagihan & Pajak', approvals:'Persetujuan Direktur', partners:'Mitra/JPT', users: 'User Management', settings: 'Settings',
 };
 export function pageLabel(url) {

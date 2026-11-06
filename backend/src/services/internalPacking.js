@@ -42,6 +42,7 @@ function sourceSnapshot(bill,type,options={}){
  fail((options.draft||packing.status==='CONFIRMED')&&packing.groups.length,'Periksa rincian sumber dan simpan dengan status dikonfirmasi sebelum membuat PL internal.',409);
  const category=sourceType==='MANUAL'?'SUPPORTING':sourceType==='PARTNER_PL'?'PACKING_LIST':REPORT_CATEGORY;
  const ids=packing.sourceFileIds;
+ if(sourceType==='PARTNER_PL'&&bill.files.some(f=>ids.includes(f.id)&&f.scope?.type==='SHARED'))fail(packing.scopeConfirmed===true,'Konfirmasikan hanya bagian sumber bersama milik B/L ini sebelum membuat PL internal.',409);
  fail((sourceType==='MANUAL'||ids.length)&&ids.every(id=>bill.files.some(f=>f.id===id&&f.filename&&f.category===category)),'Pilih sumber sesuai jenisnya. PL internal tidak boleh dipakai sebagai sumber dirinya sendiri.');
  const groups=packing.groups.map((g,index)=>{
   fail((sourceType==='MANUAL'&&!g.sourceFileId||g.sourceFileId&&ids.includes(g.sourceFileId))&&(g.dataLevel==='SUMMARY'||g.items.length),'Setiap penerima harus mempunyai sumber dan rincian barang.');

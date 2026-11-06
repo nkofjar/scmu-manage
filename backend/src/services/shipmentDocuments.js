@@ -7,7 +7,7 @@ const workspace = require('./blWorkspace');
 const include = { ...sea.seaInclude, document: true, allocations: { include: { packingList: { include: { document: true } } } } };
 async function get(tx, id) {
   const bill = await tx.seaBill.findUnique({ where: { id }, include });
-  fail(bill, 'Pengiriman tidak ditemukan.', 404); return bill;
+  fail(bill, 'Pengiriman tidak ditemukan.', 404); return require('./documentScope').annotate(tx,bill);
 }
 function linkedFiles(bill) {
   const rows = (bill.files || []).map(file => ({ ...file, source: 'ATTACHMENT' }));
@@ -16,12 +16,12 @@ function linkedFiles(bill) {
     const doc = allocation.packingList?.document;
     if (doc?.filename && !rows.some(row => row.id === doc.id || row.filename === doc.filename)) rows.push({ ...doc, category: 'PACKING_LIST', source: 'LINKED_PACKING', packingListId: allocation.packingListId });
   }
-  return rows;
+  return rows.map(file => file.scope ? file : require('./documentScope').metadata(bill,file));
 }
-const publicFile = file => Object.fromEntries(['id', 'category', 'source', 'originalName', 'mimeType', 'size', 'contentVersion', 'note', 'createdAt', 'uploadedById', 'packingListId','externalNumber','documentDate'].map(key => [key, file[key]]));
+const publicFile = file => Object.fromEntries(['id', 'category', 'source', 'originalName', 'mimeType', 'size', 'contentVersion', 'note', 'createdAt', 'uploadedById', 'packingListId','externalNumber','documentDate','scope','readOnly','mappingWarning'].map(key => [key, file[key]]));
 function availability(bill) {
   const rows = linkedFiles(bill); const has = category => rows.some(file => file.category === category);
-  return { billOfLading: !bill.registerData?.documentState?.blMissing && rows.some(f => ['DRAFT', 'FINAL', 'LEGACY'].includes(f.category)), packingList: has('PACKING_LIST')||require('./internalPacking').ready(bill)||require('./voyagePacking').available(bill), supporting: has('SUPPORTING'), internalPackingList: require('./internalPacking').ready(bill)||require('./voyagePacking').available(bill), fieldInspection:require('./packingFieldChecks').status(bill), receivingReport:has('RECEIVING_REPORT'), packingHeader: has('PACKING_HEADER'), invoice: has('INVOICE'), deliveryOrder: has('DELIVERY_ORDER'), taxInvoice: has('TAX_INVOICE'), pph23Certificate: has('PPH23_CERTIFICATE') };
+  return { billOfLading: !bill.registerData?.documentState?.blMissing && rows.some(f => ['DRAFT', 'FINAL', 'LEGACY'].includes(f.category)), packingList: has('PACKING_LIST')||require('./internalPacking').ready(bill), supporting: has('SUPPORTING'), internalPackingList: require('./internalPacking').ready(bill), fieldInspection:require('./packingFieldChecks').status(bill), receivingReport:has('RECEIVING_REPORT'), packingHeader: has('PACKING_HEADER'), invoice: has('INVOICE'), deliveryOrder: has('DELIVERY_ORDER'), taxInvoice: has('TAX_INVOICE'), pph23Certificate: has('PPH23_CERTIFICATE') };
 }
 
 async function remove(tx, user, id, fileId, body) {
@@ -30,6 +30,7 @@ async function remove(tx, user, id, fileId, body) {
   const reason = text(body.reason, 'Alasan penghapusan', 2000);
   const selected = linkedFiles(bill).find(row => row.id === fileId);
   fail(selected, 'Lampiran tidak ditemukan pada pengiriman ini.', 404);
+  fail(!linkedFiles(bill).some(file => file.filename === selected.filename && file.scope?.type === 'VOYAGE'), 'Rekap voyage hanya referensi. Kelola dokumen pada pengiriman induk.', 409);
   files.filePath(selected.filename); // Validate the server-owned basename before queuing disk cleanup.
   const aliases = (bill.files || []).filter(f => f.filename === selected.filename);
   const linkedPackings = (bill.allocations || []).filter(a => a.packingList?.document?.filename === selected.filename);
@@ -118,7 +119,7 @@ async function removeMany(tx, user, id, body) {
 }
 async function packingSnapshot(tx, id, fileId) {
   const bill = await get(tx, id); const [file] = selectedFiles(bill, [fileId]);
-  if(file.category==='INTERNAL_PACKING_RECAP')return require('./voyagePacking').savedSnapshot(tx,id,fileId);
+  fail(file.category !== 'INTERNAL_PACKING_RECAP', 'Rekap voyage hanya referensi, bukan Packing List B/L ini.', 409);
   fail(file.category === 'INTERNAL_PACKING_LIST', 'Pilih Packing List internal yang dibuat sistem.');
   const log = await tx.activityLog.findFirst({ where: { entity: 'JobOrder', entityId: bill.jobId, action: 'INTERNAL_PACKING_LIST_CREATED', metadata: { path: ['fileId'], equals: fileId } }, select: { metadata: true }, orderBy: { createdAt: 'desc' } });
   fail(log?.metadata?.seaBillId === id && log.metadata.snapshot, 'Data cetak lampiran ini tidak tersedia. Buka Kelola Packing List untuk membuat dokumen PDF dan Excel.');

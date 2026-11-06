@@ -68,6 +68,21 @@ test('valid unknown templates remain available for manual transcription, but inv
   assert.equal(result.parser,'MANUAL_ONLY'); assert.equal(result.groups.length,0); assert(result.warnings.length);
   await assert.rejects(importer.readOriginal(Buffer.from('invalid')), /Invalid XLSX/);
 });
+test('shared partner import rejects foreign containers and requires reviewed group mapping',async()=>{
+ const fs=require('node:fs/promises'),path=require('node:path'),jobFiles=require('../src/services/jobFiles');
+ const filename='isolation-'+require('node:crypto').randomUUID()+'.xlsx',target=path.join(process.env.TMPDIR,filename),original=jobFiles.filePath;
+ await fs.writeFile(target,await sample());jobFiles.filePath=()=>target;
+ const record={id:'a',jobId:'j',version:1,contentVersion:1,billNumber:'BL-A',containers:[{number:'OTHER000001'}],files:[{id:'source',filename,category:'PACKING_LIST',mimeType:importer.MIME}],allocations:[],registerData:{},shipment:{mode:'SEA',status:'PENDING'}};
+ let writes=0;const tx={seaBill:{findUnique:async()=>record,findFirst:async()=>record,update:async()=>{writes++;}},seaBillFile:{findMany:async()=>[{filename,bill:{id:'b',billNumber:'BL-B'}}]},jobOrder:{findUnique:async()=>({status:'IN_PROGRESS'})},activityLog:{create:async()=>{}}};
+ try{
+  const preview=await importer.preview(tx,'a','source');assert.equal(preview.scope.type,'SHARED');assert.equal(preview.totalsScope,'SOURCE');
+  const body={fileId:'source',version:1,confirmed:true,scopeConfirmed:true,hash:preview.hash,groupIds:[preview.groups[0].id],volumeUnit:'UNCONFIRMED'};
+  await assert.rejects(importer.apply(tx,{id:'admin'},'a',body),error=>error.status===409);assert.equal(writes,0);
+  record.containers=[{number:'SPNU2942265'}];
+  await assert.rejects(importer.apply(tx,{id:'admin'},'a',{...body,scopeConfirmed:false}),error=>error.status===409);assert.equal(writes,0);
+  const result=await importer.apply(tx,{id:'admin'},'a',body);assert.equal(result.operational.packing.scopeConfirmed,true);assert.equal(result.operational.packing.groups.length,1);
+ }finally{jobFiles.filePath=original;await fs.unlink(target);}
+});
 test('normalization preserves unknown dimensions, zero values and partial-date provenance', async () => {
   const parsed = await importer.parseWorkbook(await sample());
   const bill = { containers: parsed.containers, files: [{ id: 'source', category: 'PACKING_LIST' }] };

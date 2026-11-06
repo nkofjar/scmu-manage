@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {fileURLToPath} from 'node:url';
+const require=createRequire(new URL('../frontend/package.json',import.meta.url));
+const React=require('react'),{create,act}=require('react-test-renderer'),{MemoryRouter}=require('react-router-dom'),{createServer}=require('vite');
+const ReactDOM=require('react-dom'),portal=ReactDOM.createPortal;ReactDOM.createPortal=c=>c;
+globalThis.document={body:{style:{}},documentElement:{},getElementById:()=>null,addEventListener(){},removeEventListener(){}};
+globalThis.localStorage={getItem:()=>null,setItem(){}};globalThis.window={localStorage,location:{href:'http://localhost'},addEventListener(){},removeEventListener(){}};
+const server=await createServer({root:fileURLToPath(new URL('../frontend',import.meta.url)),server:{middlewareMode:true,hmr:false},appType:'custom'});let mounted;
+try{
+ const {LanguageProvider}=await server.ssrLoadModule('/src/i18n/LanguageContext.jsx');
+ const {default:Overview}=await server.ssrLoadModule('/src/pages/Shipments/JourneyPackingOverview.jsx');
+ const {default:api}=await server.ssrLoadModule('/src/api/client.js');
+ const bill={id:'a',version:1,billNumber:'BL-A',containers:[{number:'C1'}]},journey={id:'j',label:'SHIP 1',vesselName:'SHIP',voyageNumber:'1',bills:[bill],billCount:1,containerCount:1};
+ const calls=[];const row={key:'a:C1',number:'C1',sourceType:'BL_MANUAL',quantity:null};
+ api.get=async url=>{calls.push(['GET',url]);if(url.startsWith('/journeys?'))return {data:{data:['DRAFT','SAVED','CHANGED','NEEDS_REVIEW'].map((outputStatus,i)=>({...journey,id:'j'+i,packing:{billCount:1,outputStatus}})),total:4,page:1}};if(url==='/journeys/j0')return {data:journey};if(url==='/bl-register/a')return {data:bill};if(url==='/journeys/j/files')return {data:{data:[{id:'saved',category:'INTERNAL_PACKING_RECAP',originalName:'SAVED.xlsx',kind:'VOYAGE_PACKING',voyagePacking:true,scope:{type:'VOYAGE'},endpoint:'/saved'}]}};throw Error(url);};
+ api.post=async(url,body)=>{calls.push(['POST',url,body]);assert(url.endsWith('/preview'),'opening never publishes files');return {data:{selection:[{id:'a',version:1}],title:'PACKING LIST SCMU',number:'DRAFT',vesselName:'SHIP',voyageNumber:'1',containerCount:1,records:[{billId:'a',billNumber:'BL-A',rows:[row]}],groups:[{key:'a',billNumbers:['BL-A'],rows:[row]}]}};};
+ await act(async()=>{mounted=create(React.createElement(LanguageProvider,{initialLanguage:'id'},React.createElement(MemoryRouter,null,React.createElement(Overview))));});
+ const text=n=>typeof n==='string'?n:(n?.children||[]).map(text).join('');
+ const all=text(mounted.toJSON());for(const value of ['Belum disimpan','Tersimpan','Ada perubahan data','Perlu diperiksa ulang'])assert(all.includes(value));
+ assert(!all.includes('PL mitra tersedia'),'technical document counters replaced by output status');
+ const button=label=>mounted.root.findAllByType('button').find(n=>text(n)===label);
+ await act(async()=>button('Buka Packing List').props.onClick());
+ assert.equal(mounted.root.findByProps({'data-voyage-packing':true}).props['data-stage'],'PREVIEW');
+ assert.deepEqual(calls.find(c=>c[0]==='POST')[2],{selection:[{id:'a',version:1}]},'automatic backend source selection has no client overrides');
+ assert(!calls.some(c=>c[0]==='POST'&&!c[1].endsWith('/preview')));
+ await act(async()=>button('Hasil tersimpan & revisi').props.onClick());
+ assert(calls.some(c=>c[1]==='/journeys/j/files'),'stored files retrieved separately from latest draft');
+ console.log('PASS automatic shipment overview statuses, direct preview, server source choice, read-only open and saved history access');
+}finally{if(mounted)await act(async()=>mounted.unmount());await server.close();ReactDOM.createPortal=portal;delete globalThis.document;delete globalThis.window;delete globalThis.localStorage;}

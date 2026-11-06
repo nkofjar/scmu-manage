@@ -168,7 +168,7 @@ async function attach(tx, user, jobId, id, body, file) {
   const bill = await getBill(tx, jobId, id, body.version);
   fail(!bill.archivedAt&&!bill.registerData?.archivedAt, 'Archived register records are read-only', 409);
   const category = choice(body.category, ['DRAFT','FINAL','RELEASE','DELIVERY_ORDER','PACKING_LIST','INTERNAL_PACKING_LIST','PACKING_HEADER','RECEIVING_REPORT','INVOICE','MANIFEST','WAYBILL','POD','TAX_INVOICE','PPH23_CERTIFICATE','DRIVER_BON','PAYMENT_PROOF','SUPPORTING'], 'Sea attachment category');
-  const referenceRequired=['DELIVERY_ORDER','RECEIVING_REPORT'].includes(category);
+  const referenceRequired=category==='RECEIVING_REPORT';
   const externalNumber = text(body.externalNumber, 'Document number', 100, !referenceRequired);
   const documentDate = date(body.documentDate, !referenceRequired);
   if(category==='RECEIVING_REPORT')require('./registerFields').calendarDate(body.documentDate,'Tanggal Berita Acara');

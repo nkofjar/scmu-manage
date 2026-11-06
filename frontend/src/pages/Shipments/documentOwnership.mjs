@@ -14,3 +14,10 @@ export function availableEvidence(files,type,linked=[]){
  });
 }
 export const evidenceStatusLabel=status=>({MISSING:'Belum ada bukti',UPLOADED:'Bukti sudah diunggah',READY:'Siap dibuat bonrate',IN_BON:'Sudah masuk bonrate'})[status]||'Belum ada bukti';
+export function documentDestination({category,billId,journeyId}){
+ const owner=documentOwner(category);
+ if(owner==='DRIVER')return `/bl-register/${billId}?tab=driver-bons`;
+ if(owner==='PACKING'||category==='RECEIVING_REPORT')return `/bl-register/${billId}?tab=packing`;
+ if(['INVOICE','TAX_INVOICE','PPH23_CERTIFICATE','PAYMENT_PROOF'].includes(category))return `/bl-register/${billId}?tab=costs&documents=1`;
+ return journeyId?`/shipments/${journeyId}?tab=documents`:`/bl-register/${billId}?legacyFiles=1`;
+}

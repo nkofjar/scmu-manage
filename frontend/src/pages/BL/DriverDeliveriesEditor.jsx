@@ -1,0 +1,37 @@
+import {Button} from '../../components/common';
+import {useResource,Notice} from '../../components/jpt/Workspace';
+import {useBL} from '../../i18n/bl.mjs';
+import {blankDelivery,blankGoods,evidenceKey,scopedDeliveryFiles,deliveryProgress} from './driverDeliveriesModel.mjs';
+const today=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Jayapura',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+export default function DriverDeliveriesEditor({deliveries=[],onChange,bills=[],containers=[],files=[],selectedBillId,disabled=false,onUpload,onView}){
+ const {t}=useBL(),goods=useResource('/goods?limit=200');
+ const update=(index,key,value)=>onChange(deliveries.map((d,i)=>i===index?{...d,[key]:value}:d));
+ const itemChange=(index,itemIndex,key,value)=>update(index,'items',deliveries[index].items.map((row,i)=>i===itemIndex?{...row,[key]:value}:row));
+ const field=(d,index,key,label,type='text',extra={})=><label className="block text-sm min-w-0">{t(label)}<input className="input-field" aria-label={t(label)} type={type} value={d[key]??''} onChange={e=>update(index,key,e.target.value)} {...extra}/></label>;
+ return <section className="space-y-4 min-w-0" data-driver-deliveries>
+  <div className="flex flex-wrap justify-between gap-2 items-center"><h3 className="font-semibold">{t('Daftar Serah Terima Barang')}</h3><small>{deliveryProgress({deliveries}).complete}/{deliveries.length} {t('selesai')} · 1 {t('rit')}</small></div>
+  <Notice message={goods.error}/>
+  {deliveries.map((d,index)=>{const eligible=scopedDeliveryFiles(files,d.billId,{selectedBillId}),ownedContainers=containers.filter(c=>!d.billId||!c.billIds||c.billIds.includes(d.billId));return <fieldset disabled={disabled} key={d.id||index} className="card p-3 sm:p-4 space-y-3 min-w-0" data-driver-delivery={index}>
+   <div className="flex justify-between items-center gap-2"><h4 className="font-medium">{t('Serah terima')} {index+1}</h4><Button type="button" variant="secondary" onClick={()=>onChange(deliveries.filter((_,i)=>i!==index))}>{t('Hapus serah terima')}</Button></div>
+   <div className="grid sm:grid-cols-2 gap-3 min-w-0">
+    {selectedBillId?<p className="text-sm">{t('Nomor B/L')}: {bills.find(b=>b.id===selectedBillId)?.billNumber||selectedBillId}</p>:<label className="block text-sm">{t('B/L serah terima')}<select className="input-field" aria-label={t('B/L serah terima')} value={d.billId||''} onChange={e=>onChange(deliveries.map((row,i)=>i===index?{...row,billId:e.target.value,containerNumber:'',evidenceFileIds:[]}:row))}><option value="">{t('Belum dipilih')}</option>{bills.map(b=><option key={b.id} value={b.id}>{b.billNumber||b.id}</option>)}</select></label>}
+    <label className="block text-sm">{t('Kontainer serah terima')}<select className="input-field" aria-label={t('Kontainer serah terima')} value={d.containerNumber||''} onChange={e=>update(index,'containerNumber',e.target.value)}><option value="">{t('Belum dipilih')}</option>{ownedContainers.map(c=><option key={c.number} value={c.number}>{c.number}</option>)}</select></label>
+    {field(d,index,'recipient','Penerima')}{field(d,index,'destination','Tujuan pengantaran','text',{maxLength:300})}{field(d,index,'receivedDate','Tanggal diterima','date',{max:today()})}
+   </div>
+   <h5 className="text-sm font-medium">{t('Rincian barang')}</h5>
+   {(d.items||[]).map((item,itemIndex)=><div key={itemIndex} className="border border-zinc-700/30 rounded-lg p-3 space-y-3 min-w-0" data-delivery-item={itemIndex}><div className="grid sm:grid-cols-2 gap-3 min-w-0">
+    <label className="block text-sm">{t('Master jenis barang (opsional)')}<select className="input-field" aria-label={t('Master jenis barang (opsional)')} value={item.goodsTypeId||''} onChange={e=>{const row=goods.data?.data?.find(g=>g.id===e.target.value);update(index,'items',d.items.map((r,i)=>i===itemIndex?{...r,goodsTypeId:row?.id||null,label:row?.name||r.label}:r));}}><option value="">{t('Tanpa master')}</option>{item.goodsTypeId&&!goods.data?.data?.some(g=>g.id===item.goodsTypeId)&&<option value={item.goodsTypeId}>{item.label}</option>}{(goods.data?.data||[]).map(g=><option value={g.id} key={g.id}>{g.name}</option>)}</select></label>
+    {[['owner','Merek / pemilik','text'],['label','Jenis barang','text'],['packaging','Kemasan','text'],['quantity','Jumlah','number'],['packageWeightKg','Berat per kemasan (kg, opsional)','number']].map(([key,label,type])=><label key={key} className="block text-sm">{t(label)}<input className="input-field" aria-label={t(label)} type={type} min={type==='number'?0:undefined} step={type==='number'?'any':undefined} value={item[key]??''} onChange={e=>itemChange(index,itemIndex,key,e.target.value)}/></label>)}
+   </div><Button type="button" variant="secondary" onClick={()=>update(index,'items',d.items.filter((_,i)=>i!==itemIndex))}>{t('Hapus barang')}</Button></div>)}
+   <Button type="button" variant="secondary" onClick={()=>update(index,'items',[...(d.items||[]),blankGoods()])}>{t('Tambah barang')}</Button>
+   <div className="space-y-2 border-t border-zinc-700/30 pt-3"><label className="block text-sm">{t('Unggah Bukti Serah Terima Barang')}<input className="input-field" aria-label={t('Unggah Bukti Serah Terima Barang')} type="file" disabled={disabled||!d.billId} onChange={e=>{const file=e.target.files[0];e.target.value='';if(file)onUpload(file,index,d);}}/></label>
+    {eligible.map(f=><div className="flex gap-2 text-sm items-start min-w-0" key={f.id}><label className="flex gap-2 min-w-0 flex-1"><input type="checkbox" aria-label={f.originalName} checked={(d.evidenceFileIds||[]).includes(evidenceKey(f))} onChange={e=>update(index,'evidenceFileIds',e.target.checked?[...new Set([...(d.evidenceFileIds||[]),evidenceKey(f)])]:(d.evidenceFileIds||[]).filter(id=>id!==evidenceKey(f)))}/><span className="break-words min-w-0">{f.originalName}</span></label><button type="button" className="text-brand-500" onClick={()=>onView(f)}>{t('Lihat')}</button></div>)}
+   </div>
+  </fieldset>;})}
+  <Button type="button" variant="secondary" disabled={disabled} onClick={()=>onChange([...deliveries,blankDelivery(selectedBillId||'',selectedBillId?containers[0]?.number||'':'')])}>{t('Tambah serah terima')}</Button>
+ </section>;
+}
+export function DriverDeliveriesSummary({work,files=[],onView}){
+ const {t}=useBL(),progress=deliveryProgress(work);
+ return <section className="space-y-3" data-deliveries-summary><h3 className="font-semibold">{t('Daftar Serah Terima Barang')} · {progress.complete}/{progress.total} {t('selesai')} · 1 {t('rit')}</h3>{(work.deliveries||[]).map((d,index)=><div className="card p-3 space-y-2" key={d.id||index}><h4 className="font-medium">{t('Serah terima')} {index+1} · {d.recipient}</h4><p className="text-sm break-words">{[d.billNumber||d.billId,d.containerNumber,d.destination,d.receivedDate].filter(Boolean).join(' · ')}</p><ul className="text-sm">{(d.items||[]).map((item,i)=><li key={i}>{[item.owner,item.goodsType??item.label,[item.collyCount??item.quantity,item.collyType??item.packaging].filter(v=>v!==''&&v!=null).join(' '),item.packageWeightKg!==''&&item.packageWeightKg!=null?item.packageWeightKg+' kg':''].filter(Boolean).join(' · ')}</li>)}</ul>{files.filter(f=>(d.evidenceFileIds||[]).includes(evidenceKey(f))).map(f=><button type="button" key={f.id} className="block text-brand-500 text-sm break-words text-left" onClick={()=>onView?.(f)}>{f.originalName}</button>)}</div>)}{progress.receivedDate&&<p className="text-sm">{t('Tanggal selesai seluruh serah terima')}: {progress.receivedDate}</p>}</section>;
+}

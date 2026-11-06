@@ -60,4 +60,24 @@ async function proposeCost(tx,user,id,bonId,body){
  await tx.seaBill.update({where:{id},data:{registerData:{...current.registerData,driverCostProposals:[...(current.registerData?.driverCostProposals||[]),proposal]}}});
  await audit(tx,user,'DRIVER_BON_COST_PROPOSED','JobOrder',bill.jobId,{seaBillId:id,...proposal});return result;
 }
-module.exports={rows,normalize,list,save,proposeCost,STATUSES,transitions};
+// Read-only bill projection; wages, payroll and parent payment totals stay at journey scope.
+async function operations(tx,id){
+ const bill=await register.get(tx,id),result={journeyId:bill.journeyId||null,works:[],mappingRequired:false,readOnly:true};
+ if(!bill.journeyId)return result;
+ const parent=await require('./journeys').get(tx,bill.journeyId);
+ const active=parent.bills.filter(b=>!require('./registerLifecycle').isTrashed(b));
+ const key=require('./driverTariffs').key,ownNumbers=new Set(register.normalize({},bill).containers.map(c=>key(c.number)));
+ const allowedEvidence=new Set((bill.files||[]).filter(f=>f.filename).map(f=>f.id));
+ for(const work of parent.data?.driverOperations?.works||[]){
+  if(require('./driverDeliveries').hasChildren(work)){if(require('./driverDeliveries').billIds(work).includes(id))result.works.push(require('./billDriverOperations').projectWork(bill,parent,work));continue;}
+  const containerKey=key(work.containerNumber||work.containerKey);
+  const owners=active.filter(b=>register.normalize({},b).containers.some(c=>key(c.number)===containerKey));
+  const owns=work.billId?work.billId===id:owners.length===1&&owners[0].id===id;
+  if(!work.billId&&ownNumbers.has(containerKey)&&owners.length>1)result.mappingRequired=true;
+  if(!owns)continue;
+  const fields=['id','number','status','containerNumber','containerKey','size','driverName','vehicleNumber','origin','destination','rateType','receivedDate','receiptReference','items','notes','createdAt','updatedAt','verifiedAt'];
+  result.works.push({...Object.fromEntries(fields.filter(k=>work[k]!==undefined).map(k=>[k,work[k]])),billId:id,evidenceFileIds:(work.evidenceFileIds||[]).filter(fileId=>allowedEvidence.has(fileId))});
+ }
+ return result;
+}
+module.exports={rows,normalize,list,save,proposeCost,operations,STATUSES,transitions};

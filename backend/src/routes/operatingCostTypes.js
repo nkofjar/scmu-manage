@@ -1,0 +1,10 @@
+const router = require('express').Router();
+const prisma = require('../prisma');
+const { authenticate, authorize } = require('../middleware/auth');
+const { STAFF, route, transaction } = require('../services/jpt');
+const service = require('../services/operatingCostTypes');
+router.use(authenticate, authorize(...STAFF, 'MANAGER', 'OPERATOR', 'VIEWER'));
+router.get('/', route(async (req, res) => res.json(await service.list(prisma, req.query))));
+router.post('/', authorize('ADMIN', 'SUPER_ADMIN'), route(async (req, res) => res.status(201).json(await transaction(tx => service.save(tx, req.user, null, req.body)))));
+router.put('/:id', authorize('ADMIN', 'SUPER_ADMIN'), route(async (req, res) => res.json(await transaction(tx => service.save(tx, req.user, req.params.id, req.body)))));
+module.exports = router;

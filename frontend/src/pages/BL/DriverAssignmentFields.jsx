@@ -1,0 +1,13 @@
+import {useTransport} from '../../i18n/transport.mjs';
+import {useResource,Notice} from '../../components/jpt/Workspace';
+import {expiryState} from '../Fleet/transportModel.mjs';
+export default function DriverAssignmentFields({form,onChange,options={},error}){
+ const {t}=useTransport(),routes=useResource('/routes?limit=200');
+ const select=(kind,label,rows,idKey,nameKey,snapshotKey)=>{
+  const selected=rows.find(r=>r.id&&r.id===form[idKey]);
+  const compliance=selected||(form[idKey]?form.compliance?.[kind]:null);
+  const dates=kind==='driver'?[['SIM',compliance?.licenseExpiry]]:[['STNK',compliance?.stnkExpiry],['KIR',compliance?.kirExpiry]];
+  return <label className="block text-sm min-w-0">{t(label)}<select className="input-field" aria-label={t(label)} value={form[idKey]||''} onChange={e=>{const row=rows.find(r=>r.id&&r.id===e.target.value);onChange(idKey,row?.id||null);onChange(snapshotKey,row?.[nameKey]||row?.name||form[snapshotKey]||'');}}><option value="">{t('Belum dipetakan')}{form[snapshotKey]?' · '+form[snapshotKey]:''}</option>{form[idKey]&&!rows.some(r=>r.id===form[idKey])&&<option value={form[idKey]}>{form[snapshotKey]} · {form[idKey]}</option>}{rows.filter(r=>r.id).map(r=><option value={r.id} key={r.id}>{[r[nameKey]||r.name,r.companyName,r.id].filter(Boolean).join(' · ')}</option>)}</select>{dates.map(([name,date])=>date&&<small key={name} className="block text-zinc-500">{name}: {date.slice(0,10)} {['expired','expiring'].includes(expiryState(date))&&<span className="text-amber-500">{t(expiryState(date)==='expired'?'Kedaluwarsa':'Segera berakhir')}</span>}</small>)}{error&&<small className="text-red-400">{error}</small>}</label>;
+ };
+ return <>{select('driver','Pilih sopir master',options.drivers||[],'driverId','name','driverName')}{select('vehicle','Pilih kendaraan master',options.vehicles||[],'vehicleId','registrationNo','vehicleNumber')}<label className="block text-sm">{t('Tanggal tugas')}<input className="input-field" aria-label={t('Tanggal tugas')} type="date" value={form.taskDate||''} onChange={e=>onChange('taskDate',e.target.value)}/></label><label className="block text-sm">{t('Rute')}<select className="input-field" aria-label={t('Rute')} value={form.routeId||''} onChange={e=>onChange('routeId',e.target.value||null)}><option value="">{t('Belum dipilih')}</option>{form.routeId&&!routes.data?.data?.some(r=>r.id===form.routeId)&&<option value={form.routeId}>{form.origin} → {form.destination}</option>}{(routes.data?.data||[]).map(r=><option value={r.id} key={r.id}>{r.name||[r.origin,r.destination].filter(Boolean).join(' → ')}</option>)}</select><Notice message={routes.error}/></label></>;
+}

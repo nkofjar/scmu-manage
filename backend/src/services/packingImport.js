@@ -157,7 +157,7 @@ async function ownedPreview(tx, id, fileId) {
 }
 async function preview(tx, id, fileId) {
   const { bill, file, parsed } = await ownedPreview(tx, id, fileId);
-  return { ...parsed, fileId: file.id, filename: file.originalName, version: bill.version, billNumber: bill.billNumber,
+  return { ...parsed, fileId: file.id, filename: file.originalName, version: bill.version, billNumber: bill.billNumber, scope:file.scope,totalsScope:'SOURCE',mappingWarning:file.mappingWarning||null,
     groups: parsed.groups,
     alreadyImported: (bill.registerData?.packingImports || []).some(row => row.hash === parsed.hash) };
 }
@@ -170,12 +170,17 @@ async function apply(tx, user, id, body) {
   fail(Array.isArray(body.groupIds) && body.groupIds.length && new Set(body.groupIds).size === body.groupIds.length, 'Select recipient groups to import');
   const selected = parsed.groups.filter(g => body.groupIds.includes(g.id));
   fail(selected.length === body.groupIds.length, 'Invalid import group selection');
+  if(file.scope?.type==='SHARED'){
+    fail(body.scopeConfirmed===true,'Konfirmasikan kelompok penerima terpilih hanya milik B/L ini.',409);
+    const own=new Set(require('./blRegister').normalize({},bill).containers.map(c=>canonical(c.number)));
+    fail(selected.every(g=>g.containerNumber&&own.has(canonical(g.containerNumber))),'Kelompok sumber bersama memuat kontainer di luar B/L ini. Pilih bagian yang benar.',409);
+  }
   fail(['UNCONFIRMED', 'CBM'].includes(body.volumeUnit), 'Confirm the volume column unit');
   const previous = workspace.operationalOf(bill);
   await require('./packingRecap').invalidateShared(tx,user,bill);
   const imported = selected.map(g => ({ ...g, id: randomUUID(), containerNumber: g.containerNumber, sourceFileId: file.id,
     notes: g.notes||null, items: g.items.map(item => ({ ...item, id: randomUUID(), volumeCbm: body.volumeUnit === 'CBM' ? item.sourceVolume : null })) }));
-  const operational = workspace.normalizeOperational({ ...previous, packing: { ...previous.packing, status: 'DRAFT', headerStatus: 'DRAFT',sourceHeading:parsed.headings.join(' | ').slice(0,2000)||previous.packing.sourceHeading,
+  const operational = workspace.normalizeOperational({ ...previous, packing: { ...previous.packing, status: 'DRAFT', headerStatus: 'DRAFT',scopeConfirmed:body.scopeConfirmed===true,sourceHeading:parsed.headings.join(' | ').slice(0,2000)||previous.packing.sourceHeading,
     sourceFileIds: [...new Set([...previous.packing.sourceFileIds, file.id])], groups: [...previous.packing.groups, ...imported] } }, bill);
   const imports = [...(bill.registerData?.packingImports || []), { hash: parsed.hash, sourceFileId: file.id, parser: parsed.parser, groupIds: body.groupIds, volumeUnit: body.volumeUnit, importedAt: new Date().toISOString(), importedById: user.id }];
   await tx.seaBill.update({ where: { id }, data: { registerData: { ...bill.registerData, workflowVersion:2, operational, packingImports: imports }, version: { increment: 1 } } });

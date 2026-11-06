@@ -44,7 +44,7 @@ async function owned(tx,id,fileId){
  return {bill,file,buffer,sourceHash:createHash('sha256').update(buffer).digest('hex')};
 }
 function totals(rows){const result={};for(const row of rows)for(const q of row.quantities)result[q.unit]=result[q.unit]===null||q.quantity==null?null:(result[q.unit]||0)+q.quantity;return Object.entries(result).map(([unit,quantity])=>({unit,quantity}));}
-function presented(bill,file,data,sourceHash,extra={}){return {version:bill.version,fileId:file.id,sourceName:file.originalName,mimeType:file.mimeType,sourceHash,notice:NOTICE,...data,totals:totals(data.rows),...extra};}
+function presented(bill,file,data,sourceHash,extra={}){return {version:bill.version,fileId:file.id,sourceName:file.originalName,mimeType:file.mimeType,sourceHash,notice:NOTICE,...data,totals:totals(data.rows),...extra,scope:file.scope,totalsScope:'SOURCE',mappingWarning:file.mappingWarning||null};}
 async function preview(tx,id,fileId){
  const {bill,file,buffer,sourceHash}=await owned(tx,id,fileId),saved=bill.registerData?.partnerPackingSummaries?.[fileId];
  if(saved?.sourceHash===sourceHash)return presented(bill,file,saved.summary,sourceHash,{mode:saved.mode,sourceHeading:saved.sourceHeading,saved:true,reviewedAt:saved.reviewedAt,reviewedByName:saved.reviewedByName,warnings:saved.warnings||[]});
@@ -80,6 +80,7 @@ async function workbook(data){
  const h=data.header;band(`Mitra: ${h.partnerName||'—'} | Kapal: ${h.vesselName||'—'} | Voyage: ${h.voyageNumber||'—'} | B/L sumber: ${h.billNumber||'—'}`,45);
  band(`Berangkat: ${h.departureDate||'—'} | Tiba: ${h.arrivalDate||'—'} | Storage: ${h.storageDate||'—'} | Demurrage: ${h.demurrageDate||'—'}`,40);
  s.addRow(['No.','Kontainer / Segel','Penerima / Mark','Jumlah dan satuan','Catatan']).font={bold:true};s.pageSetup.printTitlesRow='1:6';
+ if(data.scope?.type==='SHARED'){band('SUMBER BERSAMA — '+data.scope.billNumbers.filter(Boolean).join(', '));band('Total sumber, bukan total B/L. '+data.mappingWarning,45);s.pageSetup.printTitlesRow='1:8';}
  data.rows.forEach((row,index)=>{const recipients=chunks(row.recipients),notes=lineParts(wrappedLines(row.notes,27)),counts=lineParts(row.quantities.flatMap(q=>wrappedLines(quantityText([q]),20)));for(let part=0;part<Math.max(recipients.length,notes.length,counts.length);part++){const names=recipients[part]||[],note=notes[part]||'',count=counts[part]||(part?'Lanjutan':'—');const r=s.addRow([part?`${index+1} (lanjutan)`:index+1,[row.containerNumber||'—',row.sealNumber||'—'].join('\n'),names.join('\n')||(part?'Lanjutan':'—'),count,note]);r.height=Math.max(38,Math.min(280,Math.max(names.reduce((n,name)=>n+Math.ceil(name.length/42),0),note.split('\n').length,count.split('\n').length)*14+10));}});
  band('Total per satuan: '+(quantityText(data.totals)||'Belum dicatat'),36);band(`Diperiksa: ${data.reviewedByName||'—'} | ${data.reviewedAt||'—'}`,30);
  s.eachRow(row=>row.eachCell(cell=>{cell.alignment={vertical:'top',wrapText:true};cell.border={bottom:{style:'hair',color:{argb:'FFCBD5E1'}}};}));s.headerFooter.oddFooter='&LPT SCMU&C&P / &N';s.pageSetup.printArea=`A1:E${s.rowCount}`;

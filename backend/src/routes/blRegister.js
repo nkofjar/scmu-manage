@@ -9,14 +9,24 @@ router.use(require('./registerDocuments'));
 router.use(require('./packingImport'));
 router.use(require('./partnerPackingSummary'));
 router.use(require('./internalPacking'));
+router.use(require('./driverDispatch'));
 router.get('/',route(async(req,res)=>res.json(await transaction(tx=>register.list(tx,req.query)))));
 router.get('/:id/activity',route(async(req,res)=>{
  const bill=await register.get(prisma,req.params.id);
- res.json(await require('../services/pagination').listPage(prisma.activityLog,{where:{entity:'JobOrder',entityId:bill.jobId},include:{user:{select:{name:true}}},orderBy:[{createdAt:'desc'},{id:'desc'}]},req.query));
+ const page=await require('../services/pagination').listPage(prisma.activityLog,{where:{entity:'JobOrder',entityId:bill.jobId,metadata:{path:['seaBillId'],equals:bill.id}},include:{user:{select:{name:true}}},orderBy:[{createdAt:'desc'},{id:'desc'}]},req.query);
+ // Audit snapshots may contain a voyage's other bills. Keep immutable originals
+ // in the audit store; this bill endpoint exposes only safe scalar references.
+ const keys=['seaBillId','version','fileId','chargeId','bonId','originalName','category','reason','registerNumber','resetReview','resetRelease'];
+ res.json({...page,data:page.data.map(row=>({...row,metadata:Object.fromEntries(keys.filter(key=>row.metadata?.[key]!==undefined&&['string','number','boolean'].includes(typeof row.metadata[key])).map(key=>[key,row.metadata[key]]))}))});
 }));
 router.get('/:id/workspace',route(async(req,res)=>res.json(await transaction(tx=>require('../services/blWorkspace').get(tx,req.params.id)))));
 router.put('/:id/workspace',route(async(req,res)=>res.json(await transaction(tx=>require('../services/blWorkspace').update(tx,req.user,req.params.id,req.body)))));
 router.post('/:id/operational-costs',route(async(req,res)=>res.status(201).json(await transaction(tx=>require('../services/blWorkspace').createCost(tx,req.user,req.params.id,req.body)))));
+router.get('/:id/driver-operations',route(async(req,res)=>res.json(await transaction(tx=>require('../services/billDriverOperations').list(tx,req.params.id)))));
+router.post('/:id/driver-operations/works',route(async(req,res)=>res.status(201).json(await transaction(tx=>require('../services/billDriverOperations').saveWork(tx,req.user,req.params.id,null,req.body)))));
+router.put('/:id/driver-operations/works/:workId',route(async(req,res)=>res.json(await transaction(tx=>require('../services/billDriverOperations').saveWork(tx,req.user,req.params.id,req.params.workId,req.body)))));
+router.post('/:id/driver-operations/works/:workId/status',route(async(req,res)=>res.json(await transaction(tx=>require('../services/billDriverOperations').transition(tx,req.user,req.params.id,req.params.workId,req.body)))));
+router.post('/:id/driver-operations/evidence',require('../middleware/rateLimiter').uploadLimiter,route(async(req,res)=>{const files=require('../services/jobFiles');let saved=false;try{await new Promise((resolve,reject)=>files.uploadAny(req,res,error=>error?reject(error):resolve()));const result=await transaction(tx=>require('../services/billDriverOperations').attachEvidence(tx,req.user,req.params.id,req.body,req.file));saved=true;res.status(201).json(result);}finally{if(!saved&&req.file)await files.removeFile(req.file.filename);}}));
 router.get('/:id/driver-bons',route(async(req,res)=>res.json(await require('../services/driverBons').list(prisma,req.params.id))));
 router.post('/:id/driver-bons/estimate',route(async(req,res)=>res.json(await transaction(async tx=>{const bill=await register.get(tx,req.params.id);await require('../services/seaBills').getBill(tx,bill.jobId,bill.id,req.body.version);return require('../services/driverTariffs').estimate(tx,req.body.bon,bill);}))));
 router.post('/:id/driver-bons',route(async(req,res)=>res.status(201).json(await transaction(tx=>require('../services/driverBons').save(tx,req.user,req.params.id,null,req.body)))));

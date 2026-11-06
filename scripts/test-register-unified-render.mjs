@@ -18,6 +18,7 @@ try {
  assert.ok(html.includes('21 berasal dari daftar tarif'),'Unconfirmed 21 header caveat');
  console.log('PASS unified form: all fields, optional metadata, independent counts, neutral amount.');
  const {default:List}=await server.ssrLoadModule('/src/pages/BL/BLRegister.jsx');const list=render(React.createElement(List),'/bl-register');
+ assert(list.includes('>Buat Packing List Pengiriman</button>'));assert(!list.includes('>Rekap dari B/L</button>'));
  for(const text of ['Pengiriman','Filter lainnya','Kelengkapan dokumen','Urutan','Ekspor','B/L &amp; Mitra','Kapal &amp; Voyage','Kontainer','Keluar / Masuk','Dokumen'])assert.ok(list.includes(text),'Summary list missing '+text);
  assert.ok(!list.includes('Nomor register'));assert.ok(!list.includes('Piutang'));assert.ok(list.includes('data-register-view="summary"'));assert.ok(!list.includes('data-column="registerAmount"'),'Financial detail should not crowd summary');
  assert.ok(!list.includes('data-table-toolbar'));assert.ok(!list.includes('data-column="__selection"'));assert.ok(!list.includes('>Rinci</button>'));assert.ok(!list.includes('>Kolom</button>'));
@@ -25,7 +26,8 @@ try {
  const trash=render(React.createElement(List,{trash:true}),'/bl-register/trash');for(const label of ['Sampah pengiriman','Tanggal dihapus','Dihapus oleh','Alasan penghapusan','Kembali ke Pengiriman'])assert(trash.includes(label),'Trash missing '+label);assert(!trash.includes('>Tambah pengiriman</button>'));assert(!trash.includes('>Rekap dari B/L</button>'));
  const {default:BLSummary}=await server.ssrLoadModule('/src/pages/BL/BLSummary.jsx');
  const summary=render(React.createElement(BLSummary,{bill:{id:'test',billNumber:'BL-DETAIL',grossWeightKg:0,notes:'NOTE-ORIGINAL',createdAt:'2026-04-01',updatedAt:'2026-04-02',register:{reference1:'REF-INTERNAL-TEST',reference2:'INV-TEST',additionalDate1:'2026-04-03',additionalDate2:'2026-04-04',quantity20:0,cargoDescription:'CARGO-TEST',additionalNotes:'NOTE-ADDITIONAL',documentPolicy:'BL_ONLY',includeInPackingHeader:false},registerAmount:'0.00'},onNavigate:()=>{}}));
- for(const text of ['REF-INTERNAL-TEST','INV-TEST','Tanggal invoice','Berat kotor (kg)','Informasi pencatatan','Terakhir diperbarui','NOTE-ORIGINAL','CARGO-TEST','NOTE-ADDITIONAL','Aturan dokumen mitra'])assert(summary.includes(text),'Detail missing '+text);assert(summary.includes('<dd>0</dd>'),'Known zero weight shown as missing');
+ for(const text of ['Berat kotor (kg)','Informasi pencatatan','Terakhir diperbarui','NOTE-ORIGINAL','CARGO-TEST','NOTE-ADDITIONAL','Aturan dokumen mitra'])assert(summary.includes(text),'Detail missing '+text);assert(summary.includes('<dd>0</dd>'),'Known zero weight shown as missing');
+ const {BillingSummary}=await server.ssrLoadModule('/src/pages/BL/BLSummary.jsx');const billing=render(React.createElement(BillingSummary,{bill:{register:{reference1:'REF-INTERNAL-TEST',reference2:'INV-TEST',additionalDate1:'2026-04-03'}}}));for(const text of ['REF-INTERNAL-TEST','INV-TEST','Tanggal invoice'])assert(billing.includes(text),'Billing retains '+text);
 
  const {RegisterOverview}=await server.ssrLoadModule('/src/pages/Dashboard.jsx');assert.equal(typeof RegisterOverview,'function');
  const dash=render(React.createElement(RegisterOverview,{summary:{totalRegisters:12,periodRegisters:3,missingBL:2,missingPackingList:4,incompleteRegisters:5,byVessel:[{vesselName:'MV TEST',count:8}],byVoyage:[{voyageNumber:'V9',count:4}],recentRegisters:[{id:'r1',registerNumber:'REG-001',billNumber:'BL-001'}]}}),'/');
@@ -43,7 +45,8 @@ try {
  assert(packingFiles.includes('value="PACKING_LIST"')&&!packingFiles.includes('value="FINAL"'));
  const {default:JourneyDocuments}=await server.ssrLoadModule('/src/pages/Shipments/JourneyDocuments.jsx');
  const journeyDocs=render(React.createElement(JourneyDocuments,{journey:{id:'j',bills:[]},onChanged:()=>{}}));
- assert(journeyDocs.includes('Dokumen pendukung pengiriman'));
+ assert(journeyDocs.includes('Arsip berkas asli'));
+ assert(!journeyDocs.includes('type="file"')&&!journeyDocs.includes('Hapus lampiran'),'Legacy archive is retrieval-only, not a second document manager');
  for(const category of ['FINAL','PACKING_LIST','DELIVERY_RECEIPT','POD'])assert(!journeyDocs.includes(`value="${category}"`));
  const {ReceiptEvidenceTable}=await server.ssrLoadModule('/src/pages/Shipments/DriverOperations.jsx');
  const receiptTable=render(React.createElement(ReceiptEvidenceTable,{files:[{id:'receipt',evidenceId:'receipt',category:'DELIVERY_RECEIPT',originalName:'BST-ORIGINAL.txt'},{id:'pl',evidenceId:'pl',category:'PACKING_LIST',originalName:'PL-HIDDEN.xlsx'}],works:[],onView:()=>{},onCreate:()=>{}}));
@@ -68,12 +71,13 @@ try {
  const {JourneyBillTable}=await server.ssrLoadModule('/src/pages/Shipments/JourneyDetail.jsx');
  assert.equal(typeof JourneyBillTable,'function','Journey summary must expose its actual B/L table for ownership regression coverage');
  const billTable=render(React.createElement(JourneyBillTable,{bills:[{id:'mixed-bl',billNumber:'BL-MIXED',containers:[],files:['DRAFT','FINAL','LEGACY','BILL_OF_LADING','PACKING_LIST','SUPPORTING','POD','DRIVER_BON'].map((category,i)=>({id:String(i),category}))},{id:'empty-bl',containers:[],files:[]}]}));
- assert(billTable.includes('href="/bl-register/mixed-bl?tab=summary">4 File B/L</a>'),'Count only BL-owned files and link to B/L inspection summary');
- assert(billTable.includes('href="/bl-register/empty-bl?tab=summary">0 File B/L</a>')&&!billTable.includes('?tab=documents'),'Empty B/L count remains zero and never points to supporting documents');
+ assert(!billTable.includes('data-column="docs"')&&!billTable.includes('>File B/L</th>'),'Redundant File B/L column stays removed');
+ assert(billTable.includes('href="/bl-register/mixed-bl"')&&billTable.includes('href="/bl-register/empty-bl"'),'B/L number remains the detail entry point');
+ assert(billTable.includes('Total PL mitra')&&billTable.includes('Hapus file B/L'),'Partner PL counts and attachment deletion remain available');
  const completeSummary=render(React.createElement(BLSummary,{bill:{id:'complete',files:[{category:'FINAL'},{category:'INTERNAL_PACKING_LIST'}],documentAvailability:{billOfLading:true,internalPackingList:true}},onNavigate:()=>{}}));
- assert(completeSummary.includes('Periksa B/L')&&!completeSummary.includes('Periksa dokumen'),'Complete-document action names the B/L inspection workflow');
- console.log('PASS B/L-only document counts and summary inspection navigation.');
+ assert(!completeSummary.includes('Tindakan berikutnya')&&!completeSummary.includes('Tagihan register'),'Summary does not duplicate document actions or billing');
+ console.log('PASS simplified B/L columns, detail navigation and attachment deletion preserved.');
  const {default:Workspace}=await server.ssrLoadModule('/src/pages/BL/BLWorkspace.jsx');const detailBill={id:'detail',billNumber:'BL-UI',register:{dateMeaning:'UNCONFIRMED'},containers:[{number:'SPNU2942265',seal:'001',size:'40'}],files:[],registerData:{},documentAvailability:{}};
- const detail=render(React.createElement(Workspace,{bill:detailBill}),'/bl-register/detail?tab=containers');assert.equal((detail.match(/role="tab"/g)||[]).length,5);assert(!detail.includes('Kontainer &amp; Bongkar'));for(const label of ['Packing List &amp; Rekap','Bonrate Sopir','Kontainer dalam B/L','SPNU2942265'])assert(detail.includes(label),'Document-centred detail missing '+label);
+ const detail=render(React.createElement(Workspace,{bill:detailBill}),'/bl-register/detail?tab=containers');assert.equal((detail.match(/role="tab"/g)||[]).length,4);assert(!detail.includes('Kontainer &amp; Bongkar'));assert(!detail.includes('Packing List &amp; Rekap'));assert(!/>Dokumen<\/button>/.test(detail));for(const label of ['Packing List','Bonrate Sopir','Kontainer dalam B/L','SPNU2942265'])assert(detail.includes(label),'Document-centred detail missing '+label);
  const bons=render(React.createElement(Workspace,{bill:detailBill}),'/bl-register/detail?tab=driver-bons');assert(bons.includes('Tambah bonrate'));assert(bons.includes('Belum ada bonrate sopir.'));assert(!bons.includes('data-column="__selection"'));console.log('PASS document-centred tabs, legacy container URL, embedded B/L identity and driver vouchers');
 } finally {await server.close();delete globalThis.window;delete globalThis.localStorage;}

@@ -1,7 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const { Prisma } = require('@prisma/client');
 const { fail, text, choice, date, integer, decimal, audit } = require('./jpt');
-const { costFields } = require('./transport');
+const { costFields, operatingCostTypeSnapshot } = require('./transport');
 const sea = require('./seaBills');
 
 const json = value => JSON.parse(JSON.stringify(value));
@@ -35,6 +35,10 @@ function packingGroup(row, index, bill, sourceIds, confirmed = false) {
   const containerNumber = text(row.containerNumber, 'Container number', 50, true)?.toUpperCase()||null;
   const sourceFileId = optionalText(row.sourceFileId, 'Packing source', 100);
   fail(!sourceFileId || sourceIds.includes(sourceFileId), 'Pilih berkas sumber yang terlampir pada B/L ini untuk penerima tersebut.');
+  if ((bill.files || []).some(file => file.id === sourceFileId && file.scope?.type === 'SHARED')) {
+    const canonical = require('./packingImport').canonical;
+    fail(containerNumber && (bill.containers || []).some(c => canonical(c.number) === canonical(containerNumber)), 'Kelompok sumber bersama harus menggunakan kontainer pada B/L ini.', 409);
+  }
   const items = Array.isArray(row.items) ? row.items.map((item,sequence)=>packingItem(item,sequence,confirmed)) : null;
   fail(items && items.length <= 500, 'Enter up to 500 packing items per recipient');
   return {
@@ -55,6 +59,7 @@ function normalizeOperational(input, bill) {
   const sourceIds = Array.isArray(input.packing?.sourceFileIds) ? [...new Set(input.packing.sourceFileIds)] : [];
   fail(sourceIds.length <= 100 && sourceIds.every(id => sourceFiles.some(file => file.id === id)), 'Select valid attached Packing Lists');
   const packingStatus = choice(input.packing?.status || 'DRAFT', ['DRAFT', 'CONFIRMED'], 'Packing transcription status');
+  if (packingStatus === 'CONFIRMED' && sourceFiles.some(file => sourceIds.includes(file.id) && file.scope?.type === 'SHARED')) fail(input.packing?.scopeConfirmed === true, 'Konfirmasikan hanya bagian sumber bersama milik B/L ini sebelum membuat PL internal.', 409);
   const groups = Array.isArray(input.packing?.groups) ? input.packing.groups.map((row, index) => packingGroup(row, index, bill, sourceIds, packingStatus === 'CONFIRMED')) : null;
   fail(groups && groups.length <= 200, 'Enter up to 200 Packing List recipient groups');
   if (packingStatus === 'CONFIRMED') fail(sourceIds.length && groups.length, 'Pilih minimal satu PL mitra dan terapkan hasil impor atau isi rincian penerima sebelum konfirmasi. Jika tanpa berkas, pilih Input manual.');
@@ -77,7 +82,7 @@ function normalizeOperational(input, bill) {
   if (unloading.status === 'COMPLETED') fail(unloading.declaredPackages === unloading.actualPackages && unloading.damagedPackages === 0, 'Use discrepancy status when package totals differ or damage exists');
   if (unloading.status === 'DISCREPANCY') fail(unloading.notes, 'Explain the unloading discrepancy');
   return {
-    packing: { status: packingStatus, headerStatus: choice(input.packing?.headerStatus || 'DRAFT', ['DRAFT', 'READY'], 'Packing Header status'), headerNumber: optionalText(input.packing?.headerNumber, 'Packing Header number', 100), sourceFileIds: sourceIds, groups, ...(input.packing?.comparisonBasis?{comparisonBasis:require('./packingSources').basis(input.packing.comparisonBasis)}:{}),...(input.packing?.sourceIdentity?{sourceIdentity:require('./packingSources').sourceIdentity(input.packing.sourceIdentity)}:{}),...(input.packing?.sourceHeading?{sourceHeading:text(input.packing.sourceHeading,'Judul sumber',2000,true)}:{}) },
+    packing: { status: packingStatus, headerStatus: choice(input.packing?.headerStatus || 'DRAFT', ['DRAFT', 'READY'], 'Packing Header status'), headerNumber: optionalText(input.packing?.headerNumber, 'Packing Header number', 100), sourceFileIds: sourceIds, groups, ...(input.packing?.scopeConfirmed === true ? {scopeConfirmed:true} : {}), ...(input.packing?.comparisonBasis?{comparisonBasis:require('./packingSources').basis(input.packing.comparisonBasis)}:{}),...(input.packing?.sourceIdentity?{sourceIdentity:require('./packingSources').sourceIdentity(input.packing.sourceIdentity)}:{}),...(input.packing?.sourceHeading?{sourceHeading:text(input.packing.sourceHeading,'Judul sumber',2000,true)}:{}) },
     deadlines, unloading,
   };
 }
@@ -93,7 +98,7 @@ function presentCost(row) {
 async function get(tx, id) {
   const bill = await require('./blRegister').get(tx, id);
   const operational = operationalOf(bill);
-  const costs = await tx.jobCharge.findMany({ where: { jobId: bill.jobId, kind: 'COST' }, include: { vendor: { select: { id: true, name: true } } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] });
+  const costs = await tx.jobCharge.findMany({ where: { jobId: bill.jobId, kind: 'COST', tariffSnapshot: { path: ['billId'], equals: id } }, include: { vendor: { select: { id: true, name: true } } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] });
   return { operational, costs: costs.map(presentCost) };
 }
 
@@ -122,7 +127,8 @@ async function createCost(tx, user, id, body, context = {}) {
   const evidenceFileId = optionalText(body.evidenceFileId, 'Evidence file', 100);
   fail(!evidenceFileId || bill.files.some(file => file.id === evidenceFileId), 'Select an attached evidence file');
   const line = { description: text(body.description, 'Description', 300), quantity: quantity.toFixed(4), unit: text(body.unit || 'JOB', 'Unit', 30), unitPrice: unitPrice.toFixed(2), amount: amount.toFixed(2), vatIncluded: Boolean(body.vatIncluded), vatRate: optionalText(body.vatRate, 'VAT rate', 20), pph23Applicable: Boolean(body.pph23Applicable) };
-  const snapshot = json({ billId: id, type: 'OPERATIONAL_COST', line, evidenceFileId, currency: 'IDR', ...(context.driverBonId?{driverBonId:context.driverBonId}: {}),...(context.driverRateSnapshot?{driverRateSnapshot:context.driverRateSnapshot}:{}) });
+  const operatingCostType = await operatingCostTypeSnapshot(tx, body);
+  const snapshot = json({ billId: id, type: 'OPERATIONAL_COST', line, evidenceFileId, currency: 'IDR', ...(operatingCostType ? { operatingCostType } : {}), ...(context.driverBonId?{driverBonId:context.driverBonId}: {}),...(context.driverRateSnapshot?{driverRateSnapshot:context.driverRateSnapshot}:{}) });
   const charge = await tx.jobCharge.create({ data: { jobId: bill.jobId, shipmentId: null, kind: 'COST', status: 'PROPOSED', ...(context.driverBonId?{tariffKey:'BONRATE:'+context.driverBonId}:{}), ...fields, description: line.description, estimatedAmount: amount, tariffSnapshot: snapshot, notes: optionalText(body.notes, 'Cost notes', 2000), createdById: user.id } });
   const approval = await require('./director').submit(tx, user, 'CHARGE_APPROVE', charge.id, { actualAmount: amount.toFixed(2) }, 'Operational cost recorded from the B/L workspace.');
   await tx.seaBill.update({ where: { id }, data: { version: { increment: 1 } } });

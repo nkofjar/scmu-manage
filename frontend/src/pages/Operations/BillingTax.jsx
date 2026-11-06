@@ -18,6 +18,6 @@ export default function BillingTax(){
    {key:'dueDate',label:t('Jatuh tempo'),width:'13%',render:row=><>{row.dueDate?.slice(0,10)||'—'}<p className="table-subtext">{t(({NOT_RECEIVED:'Belum diterima',RECEIVED:'Diterima',CHECKED:'Diperiksa',PAID:'Lunas',PARTIALLY_PAID:'Dibayar sebagian'})[row.billingStatus]||row.billingStatus)}</p></>},
    {key:'grossAmount',label:t('Jumlah tagihan'),align:'right',width:'18%',render:row=><>{formatRegisterAmount(row.grossAmount)}<p className="table-subtext">{t('PPh 23')}: {row.pph23Applicable?formatRegisterAmount(row.pph23Amount):t('Tidak berlaku')}</p></>},
    {key:'netPayable',label:t('Bersih dibayar'),align:'right',width:'18%',render:row=>formatRegisterAmount(row.netPayable)},
-   {key:'documents',label:t('Dokumen pajak'),width:'11%',render:row=><Link to={`/bl-register/${row.id}?tab=documents`} className="text-brand-400"><span className="table-pill">{[row.hasInvoice,row.hasTaxInvoice,row.hasPphCertificate].filter(Boolean).length} {t('tersedia')}</span><p className="table-subtext">{t('Lihat dokumen')}</p></Link>},
+   {key:'documents',label:t('Dokumen pajak'),width:'11%',render:row=><Link to={`/bl-register/${row.id}?tab=costs&documents=1`} className="text-brand-400"><span className="table-pill">{[row.hasInvoice,row.hasTaxInvoice,row.hasPphCertificate].filter(Boolean).length} {t('tersedia')}</span><p className="table-subtext">{t('Lihat dokumen')}</p></Link>},
   ]}/></div>;
 }

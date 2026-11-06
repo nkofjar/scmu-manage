@@ -13,7 +13,8 @@ function store() {
       for (const [key,value] of Object.entries(data)) bill[key] = value?.increment !== undefined ? bill[key]+value.increment : value;
       return bill;
     }},
-    seaBillFile:{create:async({data})=>{const row={id:`file-${bill.files.length+1}`,createdAt:new Date(),...data};bill.files.unshift(row);return row;}},
+    seaBillCargo:{findMany:async()=>[]},
+    seaBillFile:{findMany:async()=>[],create:async({data})=>{const row={id:`file-${bill.files.length+1}`,createdAt:new Date(),...data};bill.files.unshift(row);return row;}},
     jobDocument:{update:async value=>{writes.documents.push(value);return value;}},
     seaBillRevision:{create:async value=>{writes.revisions.push(value);return value;}},
     activityLog:{create:async value=>{writes.audit.push(value);return value;}}
@@ -36,6 +37,17 @@ test('optional packing and supporting uploads retain every version without chang
   assert.equal(writes.revisions.length,3);
   assert.equal(writes.audit.length,3);
   assert.deepEqual(bill.files.map(row=>row.category),['PACKING_LIST','SUPPORTING','PACKING_LIST']);
+});
+
+test('DO uploads allow file-only replacement, preserve old metadata and do not verify or release cargo',async()=>{
+  const {bill,tx,writes}=store();bill.internalStatus='SEA_NOT_REVIEWED';bill.releaseStatus='SEA_NOT_RELEASED';bill.releaseProofId=null;
+  await sea.attach(tx,{id:'admin'},'job','bill',{version:bill.version,category:'DELIVERY_ORDER',externalNumber:'DO-OLD',documentDate:'2026-10-01'},upload);
+  await sea.attach(tx,{id:'admin'},'job','bill',{version:bill.version,category:'DELIVERY_ORDER'},upload);
+  assert.equal(bill.files.length,2);assert.equal(bill.files[0].externalNumber,null);assert.equal(bill.files[0].documentDate,null);
+  assert.equal(bill.files[1].externalNumber,'DO-OLD');assert.equal(bill.files[1].documentDate.toISOString(),'2026-10-01T00:00:00.000Z');
+  assert.equal(bill.internalStatus,'SEA_NOT_REVIEWED');assert.equal(bill.releaseStatus,'SEA_NOT_RELEASED');assert.equal(bill.releaseProofId,null);
+  assert.equal(bill.contentVersion,3);assert.equal(writes.documents.length,0);assert.equal(writes.audit.length,2);
+  await assert.rejects(sea.attach(tx,{id:'admin'},'job','bill',{version:bill.version,category:'RECEIVING_REPORT'},upload));
 });
 
 test('payment proof uploads retain metadata and history without invalidating the matched BL or carrier release',async()=>{
@@ -109,6 +121,22 @@ function multipart(category='PACKING_LIST',version='1',bytes='%PDF-1.4\nsyntheti
   const data=new FormData();data.set('version',version);data.set('category',category);data.set('note','Received later');
   data.set('file',new Blob([bytes],{type:'application/pdf'}),'Original.pdf');return data;
 }
+test('file-only DO multipart upload and replacement keep history without inventing document metadata',async()=>{
+  await httpFixture(async({bill,root})=>{
+    const names=[];
+    try{
+      for(let i=0;i<2;i++){
+        const response=await fetch(`${root}/api/bl-register/bill/files`,{method:'POST',headers:{'x-role':'ADMIN'},body:multipart('DELIVERY_ORDER',String(bill.version))});
+        names.push(...bill.files.map(file=>file.filename));
+        const body=await response.json();assert.equal(response.status,201,JSON.stringify(body));
+        const orders=body.data.filter(file=>file.category==='DELIVERY_ORDER');assert.equal(orders.length,i+1);
+        assert(orders.every(file=>file.externalNumber===null&&file.documentDate===null));
+        assert.equal(body.availability.deliveryOrder,true);assert.equal(bill.internalStatus,'SEA_MATCHED');assert.equal(bill.releaseStatus,'SEA_RELEASE_CONFIRMED');
+      }
+    }finally{for(const name of new Set(names))await jobFiles.removeFile(name);}
+  });
+});
+
 test('register uploads use secure multipart storage, keep attachment history and return an updated version on the same record',async()=>{
   await httpFixture(async({bill,root})=>{
     const names=[];

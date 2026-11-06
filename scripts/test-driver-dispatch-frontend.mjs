@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {fileURLToPath} from 'node:url';
+const require=createRequire(new URL('../frontend/package.json',import.meta.url));
+const React=require('react'),{create,act}=require('react-test-renderer'),{MemoryRouter}=require('react-router-dom'),{createServer}=require('vite');
+const ReactDOM=require('react-dom'),portal=ReactDOM.createPortal;ReactDOM.createPortal=c=>c;
+globalThis.document={body:{style:{}},documentElement:{},getElementById:()=>null,addEventListener(){},removeEventListener(){}};
+globalThis.localStorage={getItem:()=>null,setItem(){}};globalThis.window={localStorage,location:{href:'http://localhost'},addEventListener(){},removeEventListener(){}};
+const server=await createServer({root:fileURLToPath(new URL('../frontend/',import.meta.url)),server:{middlewareMode:true,hmr:false},appType:'custom'});
+let mounted;
+const text=node=>typeof node==='string'?node:(node?.children||[]).map(text).join('');
+try{
+ const {LanguageProvider}=await server.ssrLoadModule('/src/i18n/LanguageContext.jsx');
+ const {default:Dispatch}=await server.ssrLoadModule('/src/pages/BL/DriverDispatch.jsx');
+ const {default:api}=await server.ssrLoadModule('/src/api/client.js');
+ const calls=[],saved=[];let fail=false;
+ api.get=async url=>{calls.push(['get',url]);if(fail){fail=false;throw Error('Refresh failed');}return {data:{data:structuredClone(saved)}};};
+ api.post=async(url,body)=>{calls.push(['post',url,body]);const snapshot={id:'doc',number:'ST-2026-1',documentType:body.documentType,taskDate:'2026-11-10',driverName:'Saved Driver'};saved.push(snapshot);fail=true;return {data:snapshot};};
+ const props={billId:'b',version:3,work:{id:'w',number:'BON-1',driverName:'Driver A',vehicleNumber:'PA 123',containerNumber:'C1',origin:'Port',destination:'Depot',taskDate:'2026-11-10',instructions:'Handle with care',deliveries:[{billId:'b',containerNumber:'C1',recipient:'Planned recipient',destination:'Planned depot',items:[{owner:'Owner',goodsType:'Rice',collyType:'Sack',collyCount:5,packageWeightKg:25}],receivedDate:'',evidenceFileIds:[]}],receivedDate:'',status:'DRAFT'},onClose(){},onChanged:async()=>{throw Error('Parent refresh failed');}};
+ await act(async()=>{mounted=create(React.createElement(LanguageProvider,{initialLanguage:'id'},React.createElement(MemoryRouter,null,React.createElement(Dispatch,props))));});
+ const button=label=>mounted.root.findAllByType('button').find(n=>text(n).trim()===label);
+ assert(text(mounted.toJSON()).includes('Planned recipient'),'dispatch preview includes planned children before receipts');assert(text(mounted.toJSON()).includes('Owner · Rice · 5 Sack · 25 kg'),'server goods fields retain owner, description, quantity, packaging and weight in preview');assert(text(mounted.toJSON()).includes('Driver A'));assert(text(mounted.toJSON()).includes('Handle with care'));assert.equal(calls.filter(c=>c[0]==='post').length,0,'opening preview never issues');assert(button('Terbitkan PDF').props.disabled);
+ await act(async()=>mounted.root.findAllByType('input').find(n=>n.props.type==='checkbox').props.onChange({target:{checked:true}}));
+ await act(async()=>button('Terbitkan PDF').props.onClick());
+ assert.equal(calls.filter(c=>c[0]==='post').length,1);assert.deepEqual(calls.find(c=>c[0]==='post').slice(1),['/bl-register/b/driver-operations/works/w/dispatch',{version:3,documentType:'TRANSPORT_ORDER',confirmed:true}]);
+ assert.equal(button('Terbitkan PDF'),undefined,'committed issue remains locked despite read failure');
+ await act(async()=>button('Muat ulang').props.onClick());assert(text(mounted.toJSON()).includes('ST-2026-1'));assert.equal(calls.filter(c=>c[0]==='post').length,1);
+ await act(async()=>button('Lihat').props.onClick());assert(calls.some(c=>c[1]?.endsWith('/dispatches/doc/pdf')),'reprint fetches saved PDF only');assert.equal(calls.filter(c=>c[0]==='post').length,1);
+ await act(async()=>mounted.update(React.createElement(LanguageProvider,{initialLanguage:'id'},React.createElement(MemoryRouter,null,React.createElement(Dispatch,{...props,readonly:true})))));assert.equal(button('Terbitkan PDF'),undefined);
+ console.log('PASS dispatch preview before issue, explicit confirmation, no receipt required, committed refresh recovery, saved PDF reprint and readonly');
+}finally{if(mounted)await act(async()=>mounted.unmount());await server.close();ReactDOM.createPortal=portal;}

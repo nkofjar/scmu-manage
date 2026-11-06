@@ -13,6 +13,10 @@ import BillingTax from './pages/Operations/BillingTax';
 import TariffCosts from './pages/Operations/TariffCosts';
 import DirectorApprovals from './components/jpt/DirectorApproval';
 import CompanyList from './pages/Companies/CompanyList';
+import FleetDrivers from './pages/Fleet/FleetDrivers';
+import DriverTrips from './pages/Operations/DriverTrips';
+import DeliveryRoutes from './pages/Masters/DeliveryRoutes';
+import GoodsTypes from './pages/Masters/GoodsTypes';
 import Vessels,{VesselDetail} from './pages/Vessels';
 import { LanguageProvider } from './i18n/LanguageContext';
 
@@ -36,6 +40,10 @@ function AppRoutes() {
         <Route path="shipments/:id" element={<JourneyDetail />} />
         <Route path="bl-register/:id" element={<BLDetail />} />
         <Route path="packing-lists" element={<PackingOverview />} />
+        <Route path="fleet-drivers" element={<FleetDrivers />} />
+        <Route path="driver-trips" element={<DriverTrips />} />
+        <Route path="delivery-routes" element={<DeliveryRoutes />} />
+        <Route path="goods-types" element={<GoodsTypes />} />
         <Route path="tariffs" element={<TariffCosts />} />
         <Route path="billing-tax" element={<BillingTax />} />
         <Route path="approvals" element={<DirectorApprovals />} />

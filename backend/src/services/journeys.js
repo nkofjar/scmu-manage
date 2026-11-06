@@ -5,9 +5,16 @@ const {vesselKey,voyageKey}=require('./vessels');
 const {calendarDate}=require('./registerFields');
 const keyText=v=>String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
 const keyOf=r=>r.vesselName&&r.voyageNumber&&r.period&&r.destination?[vesselKey(r.vesselName),voyageKey(r.voyageNumber),r.period,keyText(r.destination)].join('|'):null;
-const childInclude=()=>({...require('./blRegister').include,history:false});
+const childInclude=()=>{
+ const base=require('./blRegister').include,allocations=base.allocations,packingList=allocations.include.packingList;
+ return {...base,history:false,allocations:{...allocations,include:{...allocations.include,packingList:{...packingList,select:{...packingList.select,document:true}}}}};
+};
 const include=()=>({files:true,bills:{include:childInclude(),orderBy:[{createdAt:'asc'},{id:'asc'}]}});
-async function get(tx,id){const row=await tx.shippingJourney.findUnique({where:{id:text(id,'Pengiriman',100)},include:include()});fail(row,'Pengiriman tidak ditemukan.',404);return row;}
+async function packingSources(tx,row){
+ if(!row.data?.voyagePacking?.sourceSignature)return row;
+ return {...row,bills:await Promise.all((row.bills||[]).map(bill=>require('./documentScope').annotate(tx,bill)))};
+}
+async function get(tx,id){const row=await tx.shippingJourney.findUnique({where:{id:text(id,'Pengiriman',100)},include:include()});fail(row,'Pengiriman tidak ditemukan.',404);return packingSources(tx,row);}
 function mutable(row,version){fail(!row.deletedAt&&!row.archivedAt,'Pengiriman di arsip/Sampah hanya dapat dibaca.',409);if(version!==undefined)fail(integer(version,'Versi')===row.version,'Data pengiriman berubah. Muat ulang sebelum menyimpan.',409);}
 function normalize(body,before={}){
  const value={};for(const k of ['vesselName','voyageNumber','destination','notes'])value[k]=body[k]===undefined?before[k]||null:text(body[k],k,k==='notes'?2000:200,true);
@@ -49,7 +56,26 @@ function summary(row){
 }
 function present(row,detail=true){
  const {bills,files,...data}=row;const counts=summary(row);
- return {...data,...counts,packing:require('./journeyOverview').facts(row),label:row.vesselName?[row.vesselName,row.voyageNumber?'Voyage '+row.voyageNumber:null].filter(Boolean).join(' — '):row.number,deleted:Boolean(row.deletedAt),archived:Boolean(row.archivedAt),...(detail?{commonFiles:(files||[]).map(f=>({...require('./shipmentDocuments').publicFile(f),endpoint:`/journeys/${row.id}/files/${f.id}`})),bills:visibleBills(row).map(b=>{const p=require('./blRegister').present(b);return {...p,packingStatus:require('./journeyOverview').packingBill(b),files:(b.files||[]).map(require('./shipmentDocuments').publicFile),journeyId:row.id};})}:{})};
+ const children=visibleBills(row),references=[],voyageFilenames=new Set();
+ // Resolve physical ownership before publicFile hides filenames; keep raw aliases
+ // in billDocumentFiles for document/evidence operations, not in the B/L list.
+ if(detail)for(const b of children)for(const f of billDocumentFiles(b)){
+  references.push({filename:f.filename,bill:{id:b.id,billNumber:b.billNumber}});
+  for(const [index,id]of (f.scope?.billIds||[]).entries())references.push({filename:f.filename,bill:{id,billNumber:f.scope.billNumbers?.[index]}});
+  if(f.scope?.type==='VOYAGE'||require('./documentScope').metadata(b,f).scope.type==='VOYAGE')voyageFilenames.add(f.filename);
+ };
+ const publicBillFiles=b=>{
+  const seen=new Set();
+  return require('./shipmentDocuments').linkedFiles(b).filter(f=>{const key=f.filename||f.id;if(seen.has(key))return false;seen.add(key);return true;}).map(f=>{
+   const scope=require('./documentScope'),annotated=scope.metadata({...b,journeyId:row.id},f,references,voyageFilenames.has(f.filename)?new Set([f.id]):new Set());
+   if(annotated.scope.type==='BL'&&f.filename&&(files||[]).some(common=>common.filename===f.filename)){
+    annotated.scope={...annotated.scope,type:'SHARED'};
+    annotated.mappingWarning=f.category==='PACKING_LIST'?scope.MAPPING_WARNING:null;
+   }
+   return require('./shipmentDocuments').publicFile(annotated);
+  });
+ };
+ return {...data,...counts,packing:require('./journeyOverview').facts(row),label:row.vesselName?[row.vesselName,row.voyageNumber?'Voyage '+row.voyageNumber:null].filter(Boolean).join(' — '):row.number,deleted:Boolean(row.deletedAt),archived:Boolean(row.archivedAt),...(detail?{commonFiles:(files||[]).map(f=>({...require('./shipmentDocuments').publicFile(f),endpoint:`/journeys/${row.id}/files/${f.id}`})),bills:visibleBills(row).map(b=>{const p=require('./blRegister').present(b);return {...p,packingStatus:require('./journeyOverview').packingBill(b),files:publicBillFiles(b),journeyId:row.id};})}:{})};
 }
 async function list(tx,query={}){
  const state=query.archived||'active';fail(['active','archived','all','trash'].includes(state),'Status daftar tidak valid.');const where=state==='trash'?{deletedAt:{not:null}}:{deletedAt:null,...(state==='active'?{archivedAt:null}:state==='archived'?{archivedAt:{not:null}}:{})};
@@ -57,7 +83,7 @@ async function list(tx,query={}){
  for(const k of ['vesselId','voyageId'])if(query[k])and.push({[k]:text(query[k],k,100)});
  if(query.search){const search=text(query.search,'Pencarian',200);and.push({OR:['number','vesselName','voyageNumber','period','destination'].map(k=>({[k]:{contains:search,mode:'insensitive'}})).concat([{bills:{some:{AND:[notTrashed],billNumber:{contains:search,mode:'insensitive'}}}}])});}if(and.length)where.AND=and;
  const {pageMeta,pageOptions}=require('./pagination');pageOptions(query);if(query.task)require('./jpt').choice(query.task,require('./journeyOverview').TASKS,'Pekerjaan');
- let facts=await tx.shippingJourney.findMany({where,include:include(),orderBy:[{createdAt:'desc'},{id:'desc'}]});if(query.task)facts=facts.filter(r=>require('./journeyOverview').matches(r,query.task));
+ let facts=await tx.shippingJourney.findMany({where,include:include(),orderBy:[{createdAt:'desc'},{id:'desc'}]});facts=await Promise.all(facts.map(row=>packingSources(tx,row)));if(query.task)facts=facts.filter(r=>require('./journeyOverview').matches(r,query.task));
  const total=facts.length,meta=pageMeta(total,query),rows=facts.slice((meta.page-1)*meta.limit,meta.page*meta.limit),counts=facts.map(r=>serviceCounts(r));
  return {...meta,data:rows.map(r=>present(r,false)),summary:{totalJourneys:total,totalBills:counts.reduce((n,r)=>n+r.billCount,0),totalContainers:counts.reduce((n,r)=>n+r.containerCount,0)}};
 }
@@ -94,11 +120,11 @@ async function costJob(tx,user,row){if(row.sharedJobId)return row.sharedJobId;co
 async function costs(tx,id){const row=await get(tx,id),bills=row.bills.filter(b=>!isTrashed(b)),jobs=[...new Set([...bills.map(b=>b.jobId),row.sharedJobId].filter(Boolean))];const rows=await tx.jobCharge.findMany({where:{jobId:{in:jobs}},include:{vendor:{select:{name:true}}},orderBy:{createdAt:'desc'}});return {data:rows.map(c=>({...c,scope:c.jobId===row.sharedJobId?'Bersama':bills.find(b=>b.jobId===c.jobId)?.billNumber||'B/L',estimatedAmount:c.estimatedAmount.toFixed(2),actualAmount:c.actualAmount?.toFixed(2)||null})),approvedCost:rows.filter(c=>c.kind==='COST'&&c.status==='APPROVED').reduce((n,c)=>n.plus(c.actualAmount||0),money(0)).toFixed(2)};}
 async function createCost(tx,user,id,body,context={}){const row=await get(tx,id);mutable(row,body.version);
  if(body.billId){fail(row.bills.some(b=>b.id===body.billId&&!isTrashed(b)),'Pilih B/L pada pengiriman ini.');const b=row.bills.find(b=>b.id===body.billId);const result=await require('./blWorkspace').createCost(tx,user,b.id,{...body,version:b.version});await tx.shippingJourney.update({where:{id},data:{version:{increment:1}}});return result;}
- const quantity=decimal(String(body.quantity),'Jumlah',4,true),unitPrice=decimal(String(body.unitPrice),'Harga',2,true),amount=quantity.mul(unitPrice).toDecimalPlaces(2);fail(amount.lte('999999999999'),'Jumlah biaya terlalu besar.');const jobId=await costJob(tx,user,row);const fields=await require('./transport').costFields(tx,jobId,body);
- const snapshot={journeyId:id,type:'JOURNEY_COST',...(context.driverPayrollSnapshot?{driverPayrollSnapshot:context.driverPayrollSnapshot}:{}),...(context.driverRateSnapshot?{driverRateSnapshot:context.driverRateSnapshot}:{}),line:{description:text(body.description,'Uraian',300),quantity:quantity.toFixed(4),unit:text(body.unit||'JOB','Satuan',30),unitPrice:unitPrice.toFixed(2),amount:amount.toFixed(2)}};
+ const quantity=decimal(String(body.quantity),'Jumlah',4,true),unitPrice=decimal(String(body.unitPrice),'Harga',2,true),amount=quantity.mul(unitPrice).toDecimalPlaces(2);fail(amount.lte('999999999999'),'Jumlah biaya terlalu besar.');const operatingCostType=await require('./transport').operatingCostTypeSnapshot(tx,body);const jobId=await costJob(tx,user,row);const fields=await require('./transport').costFields(tx,jobId,body);
+ const snapshot={journeyId:id,type:'JOURNEY_COST',...(operatingCostType?{operatingCostType}:{}),...(context.driverPayrollSnapshot?{driverPayrollSnapshot:context.driverPayrollSnapshot}:{}),...(context.driverRateSnapshot?{driverRateSnapshot:context.driverRateSnapshot}:{}),line:{description:text(body.description,'Uraian',300),quantity:quantity.toFixed(4),unit:text(body.unit||'JOB','Satuan',30),unitPrice:unitPrice.toFixed(2),amount:amount.toFixed(2)}};
  const charge=await tx.jobCharge.create({data:{jobId,...fields,kind:'COST',status:'PROPOSED',description:snapshot.line.description,estimatedAmount:amount,tariffSnapshot:snapshot,...(context.bonId?{tariffKey:'BONRATE:'+context.bonId}:{}),createdById:user.id,notes:text(body.notes,'Catatan',2000,true)}});
  const approval=await require('./director').submit(tx,user,'CHARGE_APPROVE',charge.id,{actualAmount:amount.toFixed(2)},'Biaya bersama pengiriman '+row.number);await tx.shippingJourney.update({where:{id},data:{version:{increment:1}}});await audit(tx,user,'JOURNEY_COST_PROPOSED','ShippingJourney',id,{chargeId:charge.id,shared:true});return {charge,approval};}
 function virtualBill(row){return {id:row.id,version:row.version,billNumber:row.number,portOfDischarge:row.destination,containers:summary(row).containers,files:[...row.files,...row.bills.filter(b=>!isTrashed(b)).flatMap(b=>b.files)],registerData:row.data,archivedAt:row.archivedAt,deleted:Boolean(row.deletedAt)};}
 async function saveBon(){fail(false,'Gunakan alur pekerjaan angkut dan bukti serah terima pada Bonrate Sopir pengiriman.',409);}
 async function bonCost(){fail(false,'Biaya sopir diajukan dari rekap upah pekerjaan terverifikasi.',409);}
-module.exports={include,get,mutable,normalize,keyOf,compatible,save,forBill,summary,present,list,documents,billDocumentFiles,attach,attachDriverEvidence,attachPacking,isSupportingDocumentCategory,linkFile,costs,createCost,virtualBill,saveBon,bonCost};
+module.exports={include,get,packingSources,mutable,normalize,keyOf,compatible,save,forBill,summary,present,list,documents,billDocumentFiles,attach,attachDriverEvidence,attachPacking,isSupportingDocumentCategory,linkFile,setFileLinks:require('./journeyDocuments').setLinks,removeFile:require('./journeyDocuments').remove,costs,createCost,virtualBill,saveBon,bonCost};

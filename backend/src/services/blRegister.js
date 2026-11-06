@@ -7,11 +7,11 @@ function present(bill) {
  return {...sea.present(bill),job:undefined,jobStatus:bill.job?.status,jobNumber:bill.job?.jobNumber,registerNumber:bill.registerNumber,...data,deleted:require('./registerLifecycle').isTrashed(bill),registerAmount:bill.registerAmount==null?null:new (require('@prisma/client').Prisma.Decimal)(bill.registerAmount).toFixed(2),amountMeaning:'UNCONFIRMED',archivedAt:bill.archivedAt||bill.registerData?.archivedAt||null,archivedById:bill.archivedById||bill.registerData?.archivedById||null,archived:Boolean(bill.archivedAt||bill.registerData?.archivedAt),documentAvailability:availability(bill),workflow:require('./shipmentWorkflow').status(bill),documentSummary:{internalStatus:bill.internalStatus,releaseStatus:bill.releaseStatus,receiptStatus:sea.receipt(bill)},dateWarning:data.register.dateMeaning==='UNCONFIRMED'?'Date meaning is unconfirmed; do not assume vessel, container, or document arrival.':null};
 }
 function availability(bill) {
- const external=Boolean(bill.files?.some(row=>row.filename&&row.category==='PACKING_LIST')||bill.allocations?.some(row=>row.packingList?.document?.filename));const internal=require('./internalPacking').ready(bill)||require('./voyagePacking').available(bill);
+ const external=Boolean(bill.files?.some(row=>row.filename&&row.category==='PACKING_LIST')||bill.allocations?.some(row=>row.packingList?.document?.filename));const internal=require('./internalPacking').ready(bill);
  return {billOfLading:!bill.registerData?.documentState?.blMissing&&Boolean(bill.document?.filename || bill.files?.some(row=>row.filename&&['DRAFT','FINAL','LEGACY'].includes(row.category))),packingList:external||internal,externalPackingList:external,internalPackingList:internal,fieldInspection:require('./packingFieldChecks').status(bill),packingHeader:Boolean(bill.files?.some(row=>row.filename&&row.category==='PACKING_HEADER')),internalPackingRecap:require('./packingRecap').ready(bill),supporting:Boolean(bill.files?.some(row=>row.filename&&row.category==='SUPPORTING'))};
 }
 async function get(tx,id) {
- const bill=await tx.seaBill.findUnique({where:{id},include});fail(bill,'BL register record not found',404);return bill;
+ const bill=await tx.seaBill.findUnique({where:{id},include});fail(bill,'BL register record not found',404);return require('./documentScope').annotate(tx,bill);
 }
 async function registerNumber(tx,value,before) {
  const result=before ? text(value,'Register number',100) : require('./registerFields').optionalText(value,'Register number',100)||`REG-${require('crypto').randomUUID().toUpperCase()}`;

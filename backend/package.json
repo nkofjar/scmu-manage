@@ -1,7 +1,7 @@
 {
   "name": "scmu-backend",
   "version": "1.0.0",
-  "description": "SCMU Management System \u00e2\u20ac\u201d Backend API",
+  "description": "SCMU Management System â€” Backend API",
   "private": true,
   "engines": {
     "node": "^22.13.0 || >=24"
@@ -9,10 +9,11 @@
   "license": "UNLICENSED",
   "main": "server.js",
   "scripts": {
+    "pretest": "node --test test/driverDeliveryHistorySafety.test.js",
     "start": "node server.js",
-    "test:documents": "node --test test/vesselImports.test.js test/internalPacking.test.js test/packingWorkflow.test.js test/manualPacking.test.js test/shipmentWorkflow.test.js test/partnerPackingSummary.test.js test/documentBatch.test.js test/journeyImports.test.js test/tantoParser.test.js test/voyagePacking.test.js",
+    "test:documents": "node --test test/journeyDocumentMutations.test.js test/vesselImports.test.js test/internalPacking.test.js test/packingWorkflow.test.js test/manualPacking.test.js test/shipmentWorkflow.test.js test/partnerPackingSummary.test.js test/documentBatch.test.js test/journeyImports.test.js test/tantoParser.test.js test/voyagePacking.test.js test/voyagePackingUnified.test.js test/voyagePackingCompletion.test.js test/voyagePackingStatus.test.js",
     "dev": "nodemon server.js",
-    "test": "node --test test/rateLimiter.test.js test/jpt.test.js test/packing.test.js test/director.test.js test/seaBills.test.js test/pagination.test.js test/blRegister.test.js test/shipmentTrash.test.js test/journeys.test.js test/jptTariffs.test.js test/blRegisterRoutes.test.js test/blOperationalInvariants.test.js test/tariffInvoiceSafety.test.js test/tariffDirectorContext.test.js test/registerFields.test.js test/registerPersistence.test.js test/registerQuery.test.js test/registerDocuments.test.js test/registerExport.test.js test/packingImport.test.js test/shipmentDocuments.test.js test/driverBons.test.js test/driverTariffs.test.js test/driverOperations.test.js",
+    "test": "node --test test/driverDeliveries.test.js test/operatingCostSelection.test.js test/transportCatalogs.test.js test/operatingCostTypes.test.js test/transportTariffsRoutes.test.js test/transportCatalogSafety.test.js test/journeyBillRecap.test.js test/journeyBillRecapRoutes.test.js test/driverDispatchSafety.test.js test/driverDispatchRoutes.test.js test/driverDispatch.test.js test/driverIdentityDispatch.test.js test/driverIdentitySafety.test.js test/driverTrips.test.js test/driverTripsCalendar.test.js test/driverWageIdentity.test.js test/transportMasters.test.js test/journeyDocumentMutations.test.js test/billDriverOperations.test.js test/blIsolation.test.js test/rateLimiter.test.js test/jpt.test.js test/packing.test.js test/director.test.js test/seaBills.test.js test/pagination.test.js test/blRegister.test.js test/shipmentTrash.test.js test/journeys.test.js test/jptTariffs.test.js test/blRegisterRoutes.test.js test/blOperationalInvariants.test.js test/tariffInvoiceSafety.test.js test/tariffDirectorContext.test.js test/registerFields.test.js test/registerPersistence.test.js test/registerQuery.test.js test/registerDocuments.test.js test/registerExport.test.js test/packingImport.test.js test/shipmentDocuments.test.js test/driverBons.test.js test/driverTariffs.test.js test/driverOperations.test.js test/voyagePacking.test.js test/voyagePackingUnified.test.js test/voyagePackingCompletion.test.js test/voyagePackingStatus.test.js",
     "migrate": "npx prisma migrate dev",
     "seed": "node prisma/seed.js",
     "seed:register": "node prisma/run-register-book-demo.js",
@@ -35,6 +36,7 @@
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "pdfjs-dist": "6.4.299",
+    "pdfkit": "0.17.2",
     "tesseract.js": "7.0.0",
     "uuid": "^9.0.0"
   },

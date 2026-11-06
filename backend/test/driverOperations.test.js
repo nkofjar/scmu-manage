@@ -21,7 +21,7 @@ function workFixture(){
 test('work save accepts POD, preserves grandfathered evidence on edit and transitions without accepting new B/L or PL evidence',async()=>{
  const f=workFixture();const saved=await ops.saveWork(f.tx,{id:'staff'},'j',null,{version:1,work:{...f.work,evidenceFileIds:['POD']}});assert.deepEqual(saved.evidenceFileIds,['POD']);
  // Old linked generic evidence remains usable, but cannot be added to another work.
- f.row.data.driverOperations.works[0].evidenceFileIds=['SUPPORTING','MANIFEST'];
+ f.row.data.driverOperations.works[0].evidenceFileIds=['SUPPORTING','MANIFEST'];f.row.data.driverOperations.works[0].identityPolicy=null;
  const edited=await ops.saveWork(f.tx,{id:'staff'},'j',saved.id,{version:2,work:{...f.work,evidenceFileIds:undefined}});assert.deepEqual(edited.evidenceFileIds,['SUPPORTING','MANIFEST']);
  f.row.data.driverOperations.budgets=[{containerKey:'CONT1',number:'CONT1',size:'20',rb:2,rk:1}];
  assert.equal((await ops.transition(f.tx,{id:'staff'},'j',saved.id,{version:3,status:'SUBMITTED'})).status,'SUBMITTED');

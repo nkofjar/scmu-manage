@@ -109,7 +109,22 @@ enum VehicleType {
   TEMPO
 }
 
+enum VehicleOwnershipType {
+  OWN
+  VENDOR
+}
+
+enum DriverEmploymentType {
+  INTERNAL
+  VENDOR
+}
+
 model Vehicle {
+  ownershipType   VehicleOwnershipType?
+  stnkExpiry      DateTime?
+  kirExpiry       DateTime?
+  version         Int @default(1)
+  documents       MasterDocument[]
   id              String      @id @default(uuid())
   registrationNo  String      @unique
   type            VehicleType
@@ -133,6 +148,10 @@ model Vehicle {
 }
 
 model Driver {
+  employmentType  DriverEmploymentType?
+  licenseClass    String?
+  version         Int @default(1)
+  documents       MasterDocument[]
   id              String    @id @default(uuid())
   name            String
   phone           String    @unique
@@ -154,8 +173,34 @@ model Driver {
   @@map("drivers")
 }
 
+enum MasterDocumentCategory {
+  STNK
+  KIR
+  SIM
+}
+
+model MasterDocument {
+  id           String @id @default(uuid())
+  vehicleId    String?
+  vehicle      Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  driverId     String?
+  driver       Driver? @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  category     MasterDocumentCategory
+  filename     String @unique
+  originalName String
+  mimeType     String
+  size         Int
+  createdAt    DateTime @default(now())
+
+  @@index([vehicleId, createdAt])
+  @@index([driverId, createdAt])
+  @@map("master_documents")
+}
+
 model GoodsType {
   id          String   @id @default(uuid())
+  isActive    Boolean  @default(true)
+  version     Int      @default(1)
   name        String   @unique
   description String?
   isHazardous Boolean  @default(false)
@@ -169,6 +214,8 @@ model GoodsType {
 
 model Route {
   id            String   @id @default(uuid())
+  version       Int      @default(1)
+  tariffs       JptTariff[]
   name          String
   originCity    String
   originState   String
@@ -577,8 +624,26 @@ model JobOrder {
   @@map("job_orders")
 }
 
+model OperatingCostType {
+  id String @id @default(uuid())
+  code String @unique
+  name String
+  defaultUnit String
+  isActive Boolean @default(true)
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tariffs JptTariff[]
+  @@map("operating_cost_types")
+}
+
 model JptTariff {
   id String @id @default(uuid())
+  operatingCostTypeId String?
+  operatingCostType OperatingCostType? @relation(fields: [operatingCostTypeId], references: [id], onDelete: Restrict)
+  routeId String?
+  route Route? @relation(fields: [routeId], references: [id], onDelete: Restrict)
+  ownershipType String?
   code String @unique
   description String
   category String

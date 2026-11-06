@@ -37,6 +37,6 @@ export default function Journeys({trash=false}){
  {key:'route',label:'Rute',render:r=><>{r.origins.join(', ')||'—'}<small className="block text-zinc-500">→ {r.destination||'—'}</small></>},{key:'billCount',label:'B/L'},{key:'containerCount',label:'Kontainer'},{key:'documentCount',label:'Dokumen'},
  ...(trash?[{key:'reason',label:'Alasan penghapusan',render:r=>r.data?.trash?.reason||'—'}]:[{key:'arrivalDate',label:'Tanggal tiba',render:r=>formatDate(r.arrivalDate,locale)}]),
  {key:'actions',label:'Tindakan',items:[{key:'view',label:'Detail',href:r=>'/shipments/'+r.id},...(trash?[{key:'restore',label:'Pulihkan',onClick:r=>setAction({row:r,action:'restore'})}]:[{key:'edit',label:'Ubah',disabled:r=>r.archived,onClick:r=>setEditing(r)},{key:'archive',label:r=>r?.archived?'Aktifkan':'Arsipkan',onClick:r=>setAction({row:r,action:'archive'})},{key:'delete',label:'Hapus',variant:'danger',onClick:r=>setAction({row:r,action:'delete'})}])]}]}/>
- {editing&&<JourneyEditor initial={editing} onClose={()=>setEditing(null)} onSaved={r=>{resource.reload();if(!editing.id)navigate('/shipments/'+r.id+'?tab=documents');}}/>}{action&&<JourneyLifecycle {...action} onClose={()=>setAction(null)} onSaved={()=>resource.reload()}/>}
+ {editing&&<JourneyEditor initial={editing} onClose={()=>setEditing(null)} onSaved={r=>{resource.reload();if(!editing.id)navigate('/shipments/'+r.id+'?tab=summary');}}/>}{action&&<JourneyLifecycle {...action} onClose={()=>setAction(null)} onSaved={()=>resource.reload()}/>}
  </div>;
 }

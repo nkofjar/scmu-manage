@@ -32,6 +32,15 @@ async function transportFields(tx, body) {
   return { mode, transportSource, carrierId: carrierId || null, quoteId: body.quoteId || null, vehicleId: vehicle?.id || null, driverId: driver?.id || null };
 }
 
+async function operatingCostTypeSnapshot(tx, body) {
+  const id = body.operatingCostTypeId;
+  if (id === undefined || id === null || id === '') return null;
+  fail(typeof id === 'string' && id.length <= 100 && id.trim() === id && id.length > 0, 'Select a valid operating cost type');
+  const row = await tx.operatingCostType.findUnique({ where: { id } });
+  fail(row?.isActive, 'Select an active operating cost type');
+  return { id: row.id, code: row.code, name: row.name, defaultUnit: row.defaultUnit };
+}
+
 async function costFields(tx, jobId, body, current = {}) {
   const costSource = choice(body.costSource || current.costSource || 'VENDOR', ['INTERNAL', 'VENDOR'], 'Cost source');
   const costCategory = choice(body.costCategory || current.costCategory || 'OTHER', COST_CATEGORIES, 'Cost category');
@@ -57,4 +66,4 @@ async function transportChange(tx, current, body) {
   const { decimal, text, date } = require('./jpt');
   return { ...assignment, ...(body.freightAmount !== undefined && { freightAmount: body.freightAmount === '' || body.freightAmount === null ? null : decimal(body.freightAmount).toNumber() }), ...(body.expectedDelivery !== undefined && { expectedDelivery: date(body.expectedDelivery, true) }), ...(body.notes !== undefined && { notes: text(body.notes, 'Notes', 2000, true) }), ...(body.status === 'CANCELLED' && { status: 'CANCELLED' }) };
 }
-module.exports = { transportFields, costFields, transportChange, COST_CATEGORIES };
+module.exports = { transportFields, costFields, operatingCostTypeSnapshot, transportChange, COST_CATEGORIES };

@@ -26,10 +26,11 @@ test('snapshot survives master changes; refresh requires matching preview and co
  await assert.rejects(rates.apply(tx,{...bon},bill,before,{refreshTariff:true}));await assert.rejects(rates.apply(tx,{...bon,rbCount:3},bill,before,{}));await assert.rejects(rates.apply(tx,{...bon,ratePlan:null},bill,before,{}));
  rows[0].enabled=true;await assert.rejects(rates.apply(tx,{...bon},bill,null,body),e=>e.status===409);await assert.rejects(rates.apply(tx,{...bon},bill,{...first,status:'DRAFT'},{...body,refreshTariff:true}),e=>e.status===409);
 });
-test('director-only master rejects overlap, stale edit, nonpositive amount and preserves legacy tariffs',async()=>{
+test('administrator master rejects overlap, stale edit, nonpositive amount and preserves legacy tariffs',async()=>{
  const row={...rate('new','RB','100'),currency:'IDR',vatIncluded:false,vatRate:null,carrierName:null,notes:null};let writes=0;const tx={jptTariff:{findMany:async()=>[rate('existing','RB','100')],findUnique:async()=>row,create:async({data})=>{writes++;return {id:'saved',...data};}},activityLog:{create:async()=>({})}},director={id:'d',role:'SUPER_ADMIN'};
- await assert.rejects(master.save(tx,{role:'ADMIN'},null,row),e=>e.status===403);await assert.rejects(master.save(tx,director,null,row),e=>e.status===409);await assert.rejects(master.save(tx,director,'new',{...row,version:99}),e=>e.status===409);
- await assert.rejects(master.save(tx,director,null,{...row,unitPrice:'0'}));await master.save(tx,director,null,{...row,enabled:false});assert.equal(writes,1);
+ const {id,version,...payload}=row;
+ await assert.rejects(master.save(tx,{role:'OPERATOR'},null,payload),e=>e.status===403);await assert.rejects(master.save(tx,director,null,payload),e=>e.status===409);await assert.rejects(master.save(tx,director,'new',{version:99}),e=>e.status===409);
+ await assert.rejects(master.save(tx,director,null,{...payload,unitPrice:'0'}));await master.save(tx,director,null,{...payload,enabled:false});assert.equal(writes,1);
 });
 test('schemes are dynamic with optimistic versioning, positive total and director authority',async()=>{
  const body={code:'CUSTOM-20',name:'Skema 20',size:'20',rb:2,rk:1,enabled:true},tx={driverRateScheme:{create:async({data})=>({id:'custom',...data}),findUnique:async()=>({...body,version:2})},activityLog:{create:async()=>({})}};

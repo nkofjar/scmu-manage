@@ -1,4 +1,5 @@
 import { useLanguage } from './LanguageContext';
+import { blScopeEnglish } from './blScope.mjs';
 export const blIndonesia = {
  'B/L register':'Pengiriman','New B/L':'Tambah pengiriman','Container operations':'Operasional kontainer','JPT tariffs':'Tarif JPT',
  'One register, from vessel to empty return.':'Satu register, dari kapal hingga kembali kosong.',
@@ -23,4 +24,4 @@ export const blIndonesia = {
  'This record changed. Reload before editing again. Your unsaved values are retained.':'Data telah berubah. Muat ulang sebelum mengedit lagi. Nilai yang belum disimpan tetap dipertahankan.',
  'Reload record':'Muat ulang data','Back to register':'Kembali ke pengiriman','No activity yet':'Belum ada aktivitas','Date':'Tanggal','Action':'Tindakan','User':'Pengguna','Details':'Rincian','Approved revenue':'Pendapatan disetujui','Approved cost':'Biaya disetujui','Unbilled':'Belum ditagih','Payable':'Utang','Status':'Status','Search tariffs':'Cari tarif','No container sizes are inferred.':'Ukuran kontainer tidak ditebak.'
 };
-export function useBL() { const language = useLanguage(); return { ...language, t:(key) => language.language === 'id' ? (blIndonesia[key] ?? language.t(key)) : language.t(key) }; }
+export function useBL() { const language = useLanguage(); return { ...language, t:(key) => language.language === 'id' ? (blIndonesia[key] ?? language.t(key)) : (blScopeEnglish[key] ?? language.t(key)) }; }

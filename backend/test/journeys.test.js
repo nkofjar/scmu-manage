@@ -80,6 +80,67 @@ test('filename deduplication exposes every category alias without changing the p
  assert.deepEqual(file.evidenceAliases,[{id:'support',category:'SUPPORTING'},{id:'receipt',category:'DELIVERY_RECEIPT'},{id:'pod',category:'POD'},{id:'payment',category:'PAYMENT_PROOF'},{id:'legacy',category:'FINAL'},{id:'packing',category:'PACKING_LIST'}]);
  assert.deepEqual(file.evidenceIds,file.evidenceAliases.map(alias=>alias.id));assert.equal(file.filename,undefined);assert.deepEqual(row,before);
 });
+function presentationBill(id,extra={}){
+ return {id,billNumber:'BL-'+id,jobId:'job-'+id,journeyId:'parent',registerData:{},containers:[],files:[],allocations:[],...extra};
+}
+test('journey child query loads linked packing document metadata, not only its physical filename',()=>{
+ const packing=service.include().bills.include.allocations.include.packingList;
+ assert.equal(packing.select.document,true);
+ assert.equal(packing.select.id,true);assert.equal(packing.select.externalNumber,true);
+ assert.deepEqual(require('../src/services/blRegister').include.allocations.include.packingList.select.document,{select:{filename:true}});
+});
+test('journey B/L files include legacy B/L and linked packing sources without physical filename aliases',()=>{
+ const attachment={id:'source',filename:'source.xlsx',originalName:'source.xlsx',category:'PACKING_LIST'};
+ const legacy={id:'legacy',filename:'bill.pdf',originalName:'bill.pdf',mimeType:'application/pdf'};
+ const linked={id:'linked',filename:'linked.xlsx',originalName:'linked.xlsx',mimeType:'application/vnd.ms-excel'};
+ const bill=presentationBill('a',{document:legacy,files:[attachment,{...attachment,id:'source-alias'}],allocations:[{packingListId:'packing',packages:0,packingList:{document:linked}},{packingListId:'alias',packages:0,packingList:{document:{...attachment,id:'linked-alias'}}}]});
+ const row={id:'parent',number:'PGR-1',files:[],bills:[bill]},before=structuredClone(row);
+ const files=service.present(row).bills[0].files;
+ assert.deepEqual(files.map(f=>f.id),['source','legacy','linked']);
+ assert.deepEqual(files.map(f=>f.source),['ATTACHMENT','LEGACY_BL','LINKED_PACKING']);
+ assert.equal(files[1].category,'FINAL');assert.equal(files[2].packingListId,'packing');
+ assert.equal(files[2].originalName,'linked.xlsx');assert.equal(files[2].mimeType,'application/vnd.ms-excel');
+ assert(files.every(f=>f.filename===undefined));assert.deepEqual(row,before);
+});
+test('journey B/L packing scope finds sibling legacy allocations and common file aliases without inheriting unrelated sources',()=>{
+ const shared={filename:'shared.xlsx',originalName:'shared.xlsx',category:'PACKING_LIST'};
+ const row={id:'parent',number:'PGR-1',files:[{...shared,id:'common'},{...shared,id:'unrelated',filename:'unrelated.xlsx'}],bills:[
+  presentationBill('b',{allocations:[{packingListId:'packing',packages:0,packingList:{document:{...shared,id:'linked'}}}]}),
+  presentationBill('a',{files:[{...shared,id:'attached'}]}),
+  presentationBill('c',{files:[{...shared,id:'unique',filename:'unique.xlsx'}]}),
+ ]},before=structuredClone(row),result=service.present(row);
+ for(const bill of result.bills.slice(0,2)){
+  assert.equal(bill.files.length,1);assert.deepEqual(bill.files[0].scope,{type:'SHARED',billIds:['a','b'],billNumbers:['BL-a','BL-b'],journeyId:'parent'});
+  assert.equal(bill.files[0].mappingWarning,require('../src/services/documentScope').MAPPING_WARNING);
+ }
+ assert.equal(result.bills[2].files[0].scope.type,'BL');assert.deepEqual(result.bills[2].files[0].scope.billIds,['c']);
+ assert.deepEqual(row,before);
+});
+test('journey common source stays shared even when linked to only one B/L',()=>{
+ const source={filename:'common.xlsx',originalName:'common.xlsx',category:'PACKING_LIST'};
+ const row={id:'parent',number:'PGR-1',files:[{...source,id:'common'}],bills:[presentationBill('a',{journeyId:null,files:[{...source,id:'attached'}]})]};
+ const file=service.present(row).bills[0].files[0];
+ assert.deepEqual(file.scope,{type:'SHARED',billIds:['a'],billNumbers:['BL-a'],journeyId:'parent'});
+ assert.equal(file.mappingWarning,require('../src/services/documentScope').MAPPING_WARNING);
+});
+test('journey B/L voyage outputs retain read-only provenance through filename aliases',()=>{
+ const recap={filename:'voyage.xlsx',originalName:'voyage.xlsx',category:'INTERNAL_PACKING_RECAP'};
+ const row={id:'parent',number:'PGR-1',files:[],bills:[
+  presentationBill('a',{registerData:{voyagePacking:{filename:recap.filename}},files:[{...recap,id:'current'}]}),
+  presentationBill('b',{files:[{...recap,id:'sibling'},{...recap,id:'historical',filename:'historical.xlsx',scope:{type:'VOYAGE',billIds:['b'],billNumbers:['BL-b'],journeyId:'parent'},readOnly:true},{...recap,id:'bill-recap',filename:'bill.xlsx'}]}),
+ ]},before=structuredClone(row),result=service.present(row);
+ for(const file of [result.bills[0].files[0],...result.bills[1].files.slice(0,2)]){
+  assert.equal(file.scope.type,'VOYAGE',file.id);assert.equal(file.readOnly,true,file.id);assert.equal(file.mappingWarning,null);
+ }
+ assert.equal(result.bills[1].files[2].scope.type,'BL');assert.equal(result.bills[1].files[2].readOnly,false);
+ assert.deepEqual(row,before);
+});
+test('journey B/L presentation retains scope owners already annotated outside the loaded children',()=>{
+ const file={id:'shared',filename:'shared.xlsx',category:'PACKING_LIST',scope:{type:'SHARED',billIds:['a','external'],billNumbers:['BL-a','BL-external'],journeyId:'parent'}};
+ const row={id:'parent',files:[],bills:[presentationBill('a',{files:[file]})]};
+ const presented=service.present(row).bills[0].files[0];
+ assert.deepEqual(presented.scope,file.scope);assert.equal(presented.mappingWarning,require('../src/services/documentScope').MAPPING_WARNING);
+});
 test('B/L attachment rejects a different vessel or destination and closed parent states',async()=>{
  const row={id:'parent',vesselName:'TANTO SIAP',voyageNumber:'165',period:'2026',destination:'Merauke',data:{},files:[],bills:[]};const tx={shippingJourney:{findUnique:async()=>row,findFirst:async()=>null}};
  assert.equal((await service.forBill(tx,{id:'admin'},{journeyId:'parent',vesselName:'KM TANTO SIAP',voyageNumber:'165',portOfDischarge:'MERAUKE'})).id,'parent');

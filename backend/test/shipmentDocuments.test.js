@@ -47,6 +47,17 @@ test('batch aliases are removed once and printing uses the selected file snapsho
   tx.activityLog.findFirst=async()=>({metadata:{seaBillId:'foreign',snapshot}});
   await assert.rejects(documents.packingSnapshot(tx,'bill','generated'));
 });
+test('a selected-bill packing recap can be detached without treating it as voyage output',async()=>{
+  const {state,tx}=fixture();
+  state.bill.files.push({id:'recap',category:'INTERNAL_PACKING_RECAP',filename:'selected-recap.xlsx'});
+  state.bill.registerData.internalRecap={filename:'selected-recap.xlsx',valid:true};
+  const result=await documents.remove(tx,user,'bill','recap',body);
+  assert.equal(result.version,2);
+  assert(!state.bill.files.some(file=>file.id==='recap'));
+  assert.equal(state.bill.internalStatus,'SEA_MATCHED');
+  assert.deepEqual(state.queue,[{filename:'selected-recap.xlsx'}]);
+});
+
 test('deleting the active BL removes only its attachment, invalidates checks and never promotes an old BL', async () => {
   const { state, tx } = fixture();
   const result = await documents.remove(tx, user, 'bill', 'current', body);

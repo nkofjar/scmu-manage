@@ -7,7 +7,7 @@ async function purge(filename) {
   try {
     return await transaction(async tx => {
       const task = await tx.documentFilePurge.findUnique({ where: { filename } });
-      const references = await tx.seaBillFile.count({ where: { filename } }) + await tx.jobDocument.count({ where: { filename } }) + (tx.bLImportSession ? await tx.bLImportSession.count({where:{filename}}) : 0) + (tx.journeyFile ? await tx.journeyFile.count({where:{filename}}) : 0);
+      const references = await tx.seaBillFile.count({ where: { filename } }) + await tx.jobDocument.count({ where: { filename } }) + (tx.bLImportSession ? await tx.bLImportSession.count({where:{filename}}) : 0) + (tx.journeyFile ? await tx.journeyFile.count({where:{filename}}) : 0) + (tx.masterDocument ? await tx.masterDocument.count({where:{filename}}) : 0);
       if (!task) return { cleanupPending: false, sharedFileRetained: references > 0 };
       if (!references) {
         try { await fs.unlink(filePath(filename)); } catch (error) { if (error.code !== 'ENOENT') throw error; }
