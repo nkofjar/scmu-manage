@@ -21,18 +21,15 @@ try{
  await act(async()=>{mounted=create(React.createElement(LanguageProvider,{initialLanguage:'id'},React.createElement(MemoryRouter,null,React.createElement(BillDriverOperations,{bill:{id:'a',journeyId:'j'},onChanged:async()=>{}}))));});
  const text=node=>typeof node==='string'?node:(node?.children||[]).map(text).join('');
  const button=label=>mounted.root.findAllByType('button').find(node=>text(node).trim()===label);
- assert(button('Tambah bonrate'),'selected B/L exposes create action');
- assert(mounted.root.findAllByType('a').some(a=>a.props.href==='/shipments/j?tab=costs&operations=1'),'shared quota/payroll are secondary aggregate link');
+ assert(button('Catat Bonrate'),'selected B/L exposes create action');
+ assert(!text(mounted.toJSON()).includes('Pengaturan lanjutan dan rekap gabungan'),'aggregate settings removed');
  const parentSection=mounted.root.find(node=>node.props['data-bill-driver-operations']);
  const parentText=text(parentSection);
- const workTablePos=parentText.indexOf('Belum ada pekerjaan sopir');
- const evidencePos=parentText.indexOf('Bukti Serah Terima Barang');
- assert(workTablePos!==-1&&evidencePos!==-1&&workTablePos<evidencePos,'work table must appear above secondary evidence section');
- const evidenceSection=mounted.root.find(node=>node.props['data-driver-evidence-section']);
- assert(evidenceSection,'secondary evidence section exists');
- const evidenceTable=evidenceSection.findByType(DataTable);
- assert.equal(evidenceTable.props.pagination,false,'evidence table disables duplicate pagination controls');
- await act(async()=>button('Tambah bonrate').props.onClick());
+ assert(parentText.includes('Belum ada pekerjaan sopir'));
+ assert.equal(mounted.root.findAll(node=>node.props['data-driver-evidence-section']).length,0,'standalone evidence panel is removed');
+ assert.equal(mounted.root.findAllByType('input').filter(n=>n.props.type==='file').length,0,'upload belongs inside handover only');
+ assert(!parentText.includes('Own receipt'),'stored attachments are not a standalone list');
+ await act(async()=>button('Catat Bonrate').props.onClick());
  const input=label=>mounted.root.findAll(node=>['input','select','textarea'].includes(node.type)&&node.props['aria-label']===label)[0];
  assert.equal(input('Nomor B/L'),undefined,'B/L ownership cannot be reassigned in scoped editor');
  assert.equal(input('Tanggal diterima').props.value,'','new work must not invent receipt date');
@@ -40,7 +37,7 @@ try{
  assert(!input('Lokasi pengambilan'),'pickup is supplied by route, not manual');
  assert(!input('Nomor bukti serah terima'),'manual receipt number is retired');
  assert(button('Tambah serah terima'),'one parent supports multiple child deliveries');assert.equal(mounted.root.find(n=>n.props.role==='dialog').findAllByType('input').filter(n=>n.props.type==='file').length,1,'evidence upload belongs only to child, no duplicate parent chooser');
- assert(input('Tanggal tugas'),'task date is independent from receipt date');
+ assert(!input('Tanggal tugas'),'new bonrate is post-delivery, not scheduling');
  for(let i=1;i<5;i++)await act(async()=>button('Tambah serah terima').props.onClick());
  const deliveries=mounted.root.findAll(n=>n.type==='fieldset'&&n.props['data-driver-delivery']!==undefined);assert.equal(deliveries.length,5);
  await act(async()=>deliveries[4].findAllByType('input').find(n=>n.props['aria-label']==='Penerima').props.onChange({target:{value:'Recipient five'}}));
@@ -48,7 +45,8 @@ try{
 
  await act(async()=>input('Pilih sopir master').props.onChange({target:{value:'d1'}}));
  await act(async()=>input('Pilih kendaraan master').props.onChange({target:{value:'v1'}}));
- await act(async()=>input('Tanggal tugas').props.onChange({target:{value:'2027-01-01'}}));
+ const {default:Editor}=await server.ssrLoadModule('/src/pages/BL/DriverDeliveriesEditor.jsx');
+ await act(async()=>mounted.root.findByType(Editor).props.onChange(mounted.root.findByType(Editor).props.deliveries.map((d,i)=>({...d,containerNumber:'C1',recipient:d.recipient||'Receiver '+i,destination:'Depot',receivedDate:'2026-01-01',evidenceFileIds:['proof'],items:d.items.map(item=>({...item,owner:item.owner||'Owner '+i,label:'Rice',packaging:'Sack',quantity:2}))}))));
 
  await act(async()=>mounted.root.findByType('form').props.onSubmit({preventDefault(){}}));
  const saved=calls.find(c=>c[0]==='post'&&c[1]===base+'/works');assert(saved,'create uses scoped URL');assert.equal(saved[2].work.deliveries.length,5);assert.equal(saved[2].work.deliveries[4].recipient,'Recipient five');assert.equal(saved[2].work.billId,'a');assert.equal(saved[2].work.deliveries[4].items[0].owner,'Cargo owner');assert.equal(saved[2].work.driverName,'Scoped Driver');assert.equal(saved[2].version,1);
@@ -56,7 +54,10 @@ try{
  await act(async()=>button('Ubah').props.onClick());
  await act(async()=>input('Pilih sopir master').props.onChange({target:{value:'d1'}}));
  await act(async()=>mounted.root.findByType('form').props.onSubmit({preventDefault(){}}));
- assert.equal(calls.find(c=>c[0]==='put')[1],base+'/works/new-work');assert.equal(data.works[0].driverId,'d1');assert.equal(saved[2].work.vehicleId,'v1');assert.equal(saved[2].work.taskDate,'2027-01-01');assert.equal(saved[2].work.receivedDate,'');
+ assert.equal(calls.find(c=>c[0]==='put')[1],base+'/works/new-work');assert.equal(data.works[0].driverId,'d1');assert.equal(saved[2].work.vehicleId,'v1');assert.equal(saved[2].work.taskDate,'');assert.equal(saved[2].work.receivedDate,'2026-01-01');assert.equal(saved[2].work.recordingPolicy,'POST_DELIVERY');
+ assert(!button('Ajukan'),'POST_DELIVERY has no approval action');
+ await act(async()=>mounted.unmount());delete data.works[0].recordingPolicy;
+ await act(async()=>{mounted=create(React.createElement(LanguageProvider,{initialLanguage:'id'},React.createElement(MemoryRouter,null,React.createElement(BillDriverOperations,{bill:{id:'a',journeyId:'j'}}))));});
  await act(async()=>button('Ajukan').props.onClick());
  await act(async()=>mounted.root.findByType('form').props.onSubmit({preventDefault(){}}));
  assert.equal(calls.filter(c=>c[1]===base+'/works/new-work/status')[0][2].version,3);

@@ -7,11 +7,13 @@ function containerTotals(containers){
  const unique=new Map();for(const c of containers){const id=key(c.number);if(!id)continue;const old=unique.get(id);if(old&&old.size!==c.size)unique.set(id,{...c,size:null});else if(!old)unique.set(id,c);}
  const rows=[...unique.values()];return {twenty:rows.filter(c=>c.size==='20').length,forty:rows.filter(c=>c.size==='40').length,other:rows.filter(c=>!['20','40'].includes(c.size)).length,total:rows.length};
 }
-function compute(row,input){
+function compute(row,input,billId=null){
+ if(billId!==null)fail(typeof billId==='string'&&billId.trim().length>0&&billId.length<=100,'Pilih B/L yang valid.');
  fail(row&&!row.deletedAt,'Pengiriman tidak ditemukan atau berada di Sampah.',404);
- const source=(row.bills||[]).filter(b=>!isTrashed(b)),jobs=new Map();
+ const active=(row.bills||[]).filter(b=>!isTrashed(b)),source=billId?active.filter(b=>b.id===billId):active,jobs=new Map();
+ if(billId)fail(source.length===1,'B/L tidak ditemukan pada pengiriman ini.',404);
  for(const b of source)if(b.jobId)jobs.set(b.jobId,b.job?.currency||null);
- if(row.sharedJobId)jobs.set(row.sharedJobId,row.sharedJob?.currency||null);
+ if(!billId&&row.sharedJobId)jobs.set(row.sharedJobId,row.sharedJob?.currency||null);
  const bills=source.map(b=>{const normalized=require('./blRegister').normalize({},b);return {id:b.id,jobId:b.jobId,billNumber:b.billNumber||null,shipperName:b.shipperName||null,consigneeName:b.consigneeName||null,containers:normalized.containers.map(c=>({number:c.number,size:c.size})),counts:containerTotals(normalized.containers),cargo:normalized.register.cargoDescription||null,recordedAmount:amount(b.registerAmount),currency:jobs.get(b.jobId)};});
  const unique=new Map();for(const c of input)if(jobs.has(c.jobId)&&!unique.has(c.id))unique.set(c.id,c);
  const charges=[...unique.values()].map(c=>({id:c.id,jobId:c.jobId,billIds:bills.filter(b=>b.jobId===c.jobId).map(b=>b.id),shared:c.jobId===row.sharedJobId,description:c.description,kind:c.kind,status:c.status,costSource:c.costSource||null,costCategory:c.costCategory||null,vendor:c.vendor?.name||null,currency:jobs.get(c.jobId),actualAmount:amount(c.actualAmount),estimatedAmount:amount(c.estimatedAmount),counted:c.status==='APPROVED'&&c.actualAmount!=null}));
@@ -22,14 +24,14 @@ function compute(row,input){
   const income=total('REVENUE'),cost=total('COST');
   return {currency,income:income?.toFixed(2)??null,cost:cost?.toFixed(2)??null,difference:income&&cost?income.minus(cost).toFixed(2):null,profit:null,status:'PROVISIONAL',missingIncomeJobIds:scope.filter(id=>!actual('REVENUE').some(c=>c.jobId===id)),missingCostJobIds:scope.filter(id=>!actual('COST').some(c=>c.jobId===id)),pendingCount:group.filter(c=>c.status!=='REJECTED'&&!c.counted).length};
  });
- return {journey:{id:row.id,number:row.number,vesselName:row.vesselName||null,voyageNumber:row.voyageNumber||null,period:row.period||null,destination:row.destination||null,archived:Boolean(row.archivedAt)},bills,charges,financials,totals:{bills:bills.length,jobs:jobs.size,containers:containerTotals(bills.flatMap(b=>b.containers))},notes:['Nominal buku B/L bukan pendapatan atau biaya aktual.','Hanya transaksi APPROVED dengan nominal aktual dihitung. Usulan dan penolakan tidak dihitung.','Selisih tercatat bersifat sementara, bukan laba final. Nilai yang belum dicatat tetap tidak diketahui.','Kontainer fisik dan transaksi bersama dihitung satu kali; rincian B/L tidak boleh dijumlah ulang.']};
+ return {...(billId?{billId}:{}),journey:{id:row.id,number:row.number,vesselName:row.vesselName||null,voyageNumber:row.voyageNumber||null,period:row.period||null,destination:row.destination||null,archived:Boolean(row.archivedAt)},bills,charges,financials,totals:{bills:bills.length,jobs:jobs.size,containers:containerTotals(bills.flatMap(b=>b.containers))},notes:[...(billId?['Rekap khusus B/L ini; biaya bersama pengiriman tidak dialokasikan otomatis. Transaksi job bersama B/L lain tidak boleh dijumlah ulang.']:[]),'Nominal buku B/L bukan pendapatan atau biaya aktual.','Hanya transaksi APPROVED dengan nominal aktual dihitung. Usulan dan penolakan tidak dihitung.','Selisih tercatat bersifat sementara, bukan laba final. Nilai yang belum dicatat tetap tidak diketahui.','Kontainer fisik dan transaksi bersama dihitung satu kali; rincian B/L tidak boleh dijumlah ulang.']};
 }
-async function get(tx,id){
+async function get(tx,id,billId=null){
  const row=await tx.shippingJourney.findUnique({where:{id:text(id,'Pengiriman',100)},include:{sharedJob:{select:{currency:true}},bills:{include:{job:{select:{currency:true}}},orderBy:[{createdAt:'asc'},{id:'asc'}]}}});
  fail(row&&!row.deletedAt,'Pengiriman tidak ditemukan atau berada di Sampah.',404);
  const ids=[...new Set([row.sharedJobId,...row.bills.filter(b=>!isTrashed(b)).map(b=>b.jobId)].filter(Boolean))];
  const charges=ids.length?await tx.jobCharge.findMany({where:{jobId:{in:ids}},include:{vendor:{select:{name:true}}},orderBy:[{createdAt:'asc'},{id:'asc'}]}):[];
- return compute(row,charges);
+ return compute(row,charges,billId);
 }
 function exportTables(recap){
  return [

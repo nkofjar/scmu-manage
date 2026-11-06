@@ -12,6 +12,7 @@ try{
  const render=(language,extra={})=>renderToStaticMarkup(React.createElement(LanguageProvider,{initialLanguage:language},React.createElement(MemoryRouter,null,React.createElement(AuthProvider,null,React.createElement(JourneyBillActions,{journey:{documentCount:2,data:{voyagePacking:{number:'RPL-CURRENT'}}},onRecap(){},...extra})))));
  const html=render('id');
  assert(html.indexOf('Unggah B/L')<html.indexOf('Buat Packing List Pengiriman'));assert(html.indexOf('Buat Packing List Pengiriman')<html.indexOf('Isi B/L manual'));
+ assert(!html.includes('Rekapan B/L'),'recap belongs in each B/L row, not global actions');
  assert(!html.includes('RPL-CURRENT'));assert(!html.includes('recapFiles=1'));assert(!html.includes('legacyFiles=1'));assert(!html.includes('type="file"'));
  assert(render('en').includes('Create Shipment Packing List'));
  assert.match(render('id',{recapReason:'Lengkapi nomor B/L terlebih dahulu.'}),/disabled[^>]*title="Lengkapi nomor B\/L terlebih dahulu\."/);

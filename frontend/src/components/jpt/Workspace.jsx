@@ -91,12 +91,13 @@ export function ModalForm({ title, onClose, onSubmit, children, submitLabel = 'S
     <form id={formId} onSubmit={submit} className="space-y-5"><Notice message={error} />{children}</form>
   </Modal>;
 }
-export function DetailModal({ title, onClose, children, actions, width = 'max-w-6xl' }) {
+export function DetailModal({ title, onClose, children, actions, width = 'max-w-6xl', actionsEnd = false }) {
   const { t } = useLanguage();
   return <Modal open onClose={onClose} title={t(title)} width={width} footer={
-    <div className="flex flex-wrap items-center gap-2">
+    <div className={`flex flex-wrap items-center gap-2 ${actionsEnd ? 'justify-end' : ''}`}>
+      {actionsEnd && <Button type="button" variant="secondary" onClick={onClose}>{t('Close')}</Button>}
       {actions}
-      <Button type="button" variant="secondary" className="ml-auto" onClick={onClose}>{t('Close')}</Button>
+      {!actionsEnd && <Button type="button" variant="secondary" className="ml-auto" onClick={onClose}>{t('Close')}</Button>}
     </div>
   }>{children}</Modal>;
 }

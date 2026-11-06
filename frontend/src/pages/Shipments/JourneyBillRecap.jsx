@@ -5,11 +5,11 @@ import {Button} from '../../components/common';
 import {DataTable,DetailModal,Notice,useResource} from '../../components/jpt/Workspace';
 import {useBL} from '../../i18n/bl.mjs';
 const known=value=>value==null?'Belum tercatat':value;
-export default function JourneyBillRecap({journeyId,onClose}){
- const {t}=useBL(),resource=useResource('/journeys/'+journeyId+'/bill-recap'),[busy,setBusy]=useState(''),[error,setError]=useState(''),recap=resource.data;
+export default function JourneyBillRecap({journeyId,billId,onClose}){
+ const {t}=useBL(),suffix=billId?'?billId='+encodeURIComponent(billId):'',resource=useResource('/journeys/'+journeyId+'/bill-recap'+suffix),[busy,setBusy]=useState(''),[error,setError]=useState(''),recap=resource.data;
  const download=async extension=>{
   if(busy)return;setBusy(extension);setError('');
-  try{const response=await api.get('/journeys/'+journeyId+'/bill-recap.'+extension,{responseType:'blob'}),url=URL.createObjectURL(response.data),a=document.createElement('a');a.href=url;a.download='rekapan-bl.'+extension;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  try{const response=await api.get('/journeys/'+journeyId+'/bill-recap.'+extension+suffix,{responseType:'blob'}),url=URL.createObjectURL(response.data),a=document.createElement('a');a.href=url;a.download='rekapan-bl'+(billId?'-'+billId:'')+'.'+extension;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   catch(e){setError(e.response?.data?.message||e.message);}finally{setBusy('');}
  };
  return <DetailModal title="Rekapan B/L" onClose={onClose} actions={<><Button variant="secondary" disabled={!recap||resource.loading||!!busy} onClick={()=>download('pdf')}>{t('Unduh PDF')}</Button><Button variant="secondary" disabled={!recap||resource.loading||!!busy} onClick={()=>download('xlsx')}>{t('Unduh Excel')}</Button></>}>

@@ -5,8 +5,8 @@ test('container allowance counts trips across drivers and B/Ls, never goods rows
  assert.deepEqual(ops.usage(data,'C1'),{rb:2,rk:0});ops.checkCapacity(data,{containerKey:'C1',number:'C1',rb:3,rk:0},null,'RB');assert.throws(()=>ops.checkCapacity(data,{containerKey:'C1',number:'C1',rb:2,rk:2},null,'RB'),e=>e.status===409);ops.checkCapacity(data,{containerKey:'C1',number:'C1',rb:2,rk:2},null,'RK');
  assert.deepEqual(ops.checkCapacity(data,{containerKey:'C1',number:'C1',rb:2,rk:0},'a','RB'),{rb:2,rk:0});
 });
-test('draft retains incomplete data; submission requires actual goods and delivery evidence',()=>{
- const row={id:'j',vesselName:'Vessel',voyageNumber:'1',files:[{id:'proof',filename:'p'}],bills:[]};const draft=ops.normalizeWork({items:[],evidenceFileIds:[],rateType:'RK'},row);assert.match(draft.number,/^BON-SCMU-/);assert.equal(draft.rateType,'RK');assert.equal(draft.status,'DRAFT');assert.throws(()=>ops.ready(draft));
+test('legacy draft retains incomplete data; submission requires actual goods and delivery evidence',()=>{
+ const row={id:'j',vesselName:'Vessel',voyageNumber:'1',files:[{id:'proof',filename:'p'}],bills:[]};const draft=ops.normalizeWork({items:[],evidenceFileIds:[],rateType:'RK'},row,{});assert.match(draft.number,/^BON-SCMU-/);assert.equal(draft.rateType,'RK');assert.equal(draft.status,'DRAFT');assert.throws(()=>ops.ready(draft));
  assert.throws(()=>ops.normalizeWork({items:[],receivedDate:'2026-02-30'},row));assert.throws(()=>ops.normalizeWork({items:[],evidenceFileIds:['foreign']},row));assert.throws(()=>ops.normalizeWork({items:[{collyCount:-1}]},row));assert.throws(()=>ops.normalizeWork({items:[],containerNumber:'unknown'},row));
 });
 test('work, quota and wage evidence remain referenced, including cancelled historical work',()=>{
@@ -19,7 +19,7 @@ function workFixture(){
  return {row,tx,writes,logs,work};
 }
 test('work save accepts POD, preserves grandfathered evidence on edit and transitions without accepting new B/L or PL evidence',async()=>{
- const f=workFixture();const saved=await ops.saveWork(f.tx,{id:'staff'},'j',null,{version:1,work:{...f.work,evidenceFileIds:['POD']}});assert.deepEqual(saved.evidenceFileIds,['POD']);
+ const f=workFixture();f.row.data.driverOperations={works:[{...ops.normalizeWork(f.work,f.row,{}),id:'legacy'}]};const saved=await ops.saveWork(f.tx,{id:'staff'},'j','legacy',{version:1,work:{...f.work,evidenceFileIds:['POD']}});assert.deepEqual(saved.evidenceFileIds,['POD']);
  // Old linked generic evidence remains usable, but cannot be added to another work.
  f.row.data.driverOperations.works[0].evidenceFileIds=['SUPPORTING','MANIFEST'];f.row.data.driverOperations.works[0].identityPolicy=null;
  const edited=await ops.saveWork(f.tx,{id:'staff'},'j',saved.id,{version:2,work:{...f.work,evidenceFileIds:undefined}});assert.deepEqual(edited.evidenceFileIds,['SUPPORTING','MANIFEST']);
@@ -31,7 +31,7 @@ test('work save accepts POD, preserves grandfathered evidence on edit and transi
  }
 });
 test('list derives evidence readiness and bill links without persisting workflow changes, including aliased legacy proofs',async()=>{
- const f=workFixture(),base=ops.normalizeWork(f.work,f.row);
+ const f=workFixture(),base=ops.normalizeWork(f.work,f.row,{});
  f.row.bills[0].files=[{id:'canonical',filename:'legacy.txt',originalName:'Legacy proof',category:'SUPPORTING'}];
  f.row.bills[0].document={id:'hidden-legacy',filename:'legacy.txt',originalName:'Legacy proof'};
  const rows=[
@@ -56,17 +56,17 @@ test('list derives evidence readiness and bill links without persisting workflow
  assert.equal(f.row.data.driverOperations.works.find(w=>w.id==='legacy').evidenceStatus,undefined);
 });
 test('readiness tolerates incomplete legacy fields and cannot be spoofed by persisted or submitted derived values',async()=>{
- const f=workFixture(),base=ops.normalizeWork(f.work,f.row);
+ const f=workFixture(),base=ops.normalizeWork(f.work,f.row,{});
  f.row.data.driverOperations={works:[{...base,id:'legacy-incomplete',items:undefined,evidenceStatus:'READY'}]};
  const result=await ops.list(f.tx,'j');assert.equal(result.works[0].evidenceStatus,'UPLOADED');
- const saved=await ops.saveWork(f.tx,{id:'staff'},'j',null,{version:1,work:{...f.work,evidenceStatus:'IN_BON',billIds:['foreign']}});assert.equal(saved.evidenceStatus,undefined);assert.equal(saved.billIds,undefined);assert.equal(saved.status,'DRAFT');
+ const saved=await ops.saveWork(f.tx,{id:'staff'},'j','legacy-incomplete',{version:1,work:{...f.work,evidenceStatus:'IN_BON',billIds:['foreign']}});assert.equal(saved.evidenceStatus,undefined);assert.equal(saved.billIds,undefined);assert.equal(saved.status,'DRAFT');
 });
 test('actual work writes reject stale, archived and trashed parents and cannot skip explicit workflow',async()=>{
  for(const action of ['save','submit'])for(const closed of ['stale','archivedAt','deletedAt']){
-  const f=workFixture(),work={...ops.normalizeWork(f.work,f.row),id:'work'};f.row.data.driverOperations={works:[work]};if(closed!=='stale')f.row[closed]=new Date();
+  const f=workFixture(),work={...ops.normalizeWork(f.work,f.row,{}),id:'work'};f.row.data.driverOperations={works:[work]};if(closed!=='stale')f.row[closed]=new Date();
   await assert.rejects(action==='save'?ops.saveWork(f.tx,{id:'staff'},'j','work',{version:closed==='stale'?2:1,work:f.work}):ops.transition(f.tx,{id:'staff'},'j','work',{version:closed==='stale'?2:1,status:'SUBMITTED'}),e=>e.status===409);assert.equal(f.writes.length,0);assert.equal(f.logs.length,0);
  }
- const f=workFixture(),work={...ops.normalizeWork(f.work,f.row),id:'work'};f.row.data.driverOperations={works:[work]};
+ const f=workFixture(),work={...ops.normalizeWork(f.work,f.row,{}),id:'work'};f.row.data.driverOperations={works:[work]};
  await assert.rejects(ops.transition(f.tx,{id:'staff'},'j','work',{version:1,status:'VERIFIED',proofChecked:true}),e=>e.status===409);assert.equal(f.writes.length,0);
  assert.throws(()=>ops.ready({...work,evidenceFileIds:undefined}),e=>e.status===422);
 });
@@ -81,7 +81,7 @@ test('quota review retains linked legacy evidence while new quota and payment re
 });
 test('submission and verification reject stale selected B/L ownership even when another active B/L retains the container',async()=>{
  for(const status of ['SUBMITTED','VERIFIED'])for(const change of ['detached','trashed','container-removed']){
-  const f=workFixture(),work={...ops.normalizeWork({...f.work,billId:'bill'},f.row),id:'work',status:status==='VERIFIED'?'SUBMITTED':'DRAFT'};
+  const f=workFixture(),work={...ops.normalizeWork({...f.work,billId:'bill'},f.row,{}),id:'work',status:status==='VERIFIED'?'SUBMITTED':'DRAFT'};
   f.row.bills.push({...structuredClone(f.row.bills[0]),id:'other',billNumber:'BL2'});
   if(change==='detached')f.row.bills.shift();
   if(change==='trashed')f.row.bills[0].registerData.trash={deletedAt:'2026-01-03'};
@@ -93,7 +93,7 @@ test('submission and verification reject stale selected B/L ownership even when 
 });
 test('readiness rechecks current container identity and selected B/L ownership without changing historical in-bon state',async()=>{
  for(const change of ['detached','trashed','container-removed','size-changed','container-gone']){
-  const f=workFixture(),base=ops.normalizeWork({...f.work,billId:'bill'},f.row);
+  const f=workFixture(),base=ops.normalizeWork({...f.work,billId:'bill'},f.row,{});
   f.row.data.driverOperations={works:[{...base,id:'draft'},{...base,id:'rejected',status:'REJECTED'},{...base,id:'submitted',status:'SUBMITTED'},{...base,id:'verified',status:'VERIFIED'}]};
   if(change==='detached')f.row.bills[0].id='other';
   if(change==='trashed'){f.row.bills.push({...structuredClone(f.row.bills[0]),id:'other'});f.row.bills[0].registerData.trash={deletedAt:'2026-01-03'};}
@@ -105,7 +105,7 @@ test('readiness rechecks current container identity and selected B/L ownership w
  }
 });
 test('current selected B/L and unscoped legacy work remain ready and can submit with shared receipt attachments',async()=>{
- const f=workFixture(),base=ops.normalizeWork(f.work,f.row);
+ const f=workFixture(),base=ops.normalizeWork(f.work,f.row,{});
  f.row.data.driverOperations={works:[{...base,id:'selected',billId:'bill'},{...base,id:'unscoped',receiptReference:'REC2'}],budgets:[{containerKey:'CONT1',number:'CONT1',size:'20',rb:2,rk:1}]};
  assert.deepEqual((await ops.list(f.tx,'j')).works.map(w=>w.evidenceStatus),['READY','READY']);
  await ops.transition(f.tx,{id:'staff'},'j','selected',{version:1,status:'SUBMITTED'});

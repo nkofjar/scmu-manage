@@ -31,14 +31,14 @@ function projectWork(bill,parent,work){
  if(delivery.hasChildren(work)){
   const children=work.deliveries.filter(d=>d.billId===bill.id).map(d=>({...structuredClone(d),evidenceFileIds:(d.evidenceFileIds||[]).filter(id=>allowed.has(id))}));
   const sharedWork=delivery.billIds(work).some(id=>id!==bill.id);
-  const safe=['id','number','status','driverId','driverName','vehicleId','vehicleNumber','rateType','taskDate','createdAt','updatedAt','verifiedAt','receivedDate'];
-  const result={...Object.fromEntries(safe.filter(k=>work[k]!==undefined).map(k=>[k,work[k]])),billId:work.billId,sharedWork,readOnly:sharedWork,deliveries:children,evidenceFileIds:[...new Set(children.flatMap(d=>d.evidenceFileIds))],items:children.flatMap(d=>d.items),containerNumber:children[0]?.containerNumber||null,destination:children.map(d=>d.destination).filter(Boolean).join('; ')};
+  const safe=['recordingPolicy','id','number','status','driverId','driverName','vehicleId','vehicleNumber','rateType','taskDate','createdAt','updatedAt','verifiedAt','receivedDate'];
+  const result={...Object.fromEntries(safe.filter(k=>work[k]!==undefined).map(k=>[k,work[k]])),bonrateIssued:operations.bonrateIssued(work),billId:work.billId,sharedWork,readOnly:sharedWork,deliveries:children,evidenceFileIds:[...new Set(children.flatMap(d=>d.evidenceFileIds))],items:children.flatMap(d=>d.items),containerNumber:children[0]?.containerNumber||null,destination:children.map(d=>d.destination).filter(Boolean).join('; ')};
   result.evidenceStatus=['SUBMITTED','VERIFIED'].includes(work.status)||work.payrollId?'IN_BON':result.evidenceFileIds.length?'UPLOADED':'MISSING';
-  if(!sharedWork){result.containerNumber=work.containerNumber;result.routeId=work.routeId||null;result.routeSnapshot=structuredClone(work.routeSnapshot||null);result.origin=work.origin||null;result.size=work.size;result.containerKey=work.containerKey;try{delivery.validate(parent,work);operations.ready(work);result.evidenceStatus=['SUBMITTED','VERIFIED'].includes(work.status)?'IN_BON':'READY';}catch(error){if(![409,422].includes(error.status))throw error;}}
+  if(!sharedWork){result.containerNumber=work.containerNumber;result.routeId=work.routeId||null;result.routeSnapshot=structuredClone(work.routeSnapshot||null);result.origin=work.origin||null;result.size=work.size;result.containerKey=work.containerKey;if(['DRAFT','REJECTED'].includes(work.status)&&!work.payrollId)try{delivery.validate(parent,work);operations.ready(work);result.evidenceStatus='READY';}catch(error){if(![409,422].includes(error.status))throw error;}}
   return result;
  }
- const fields=['driverId','vehicleId','driverEmploymentType','vehicleOwnershipType','driverCompanyId','vehicleCompanyId','driverCompanyName','vehicleCompanyName','taskDate','instructions','dispatches','id','number','status','containerNumber','containerKey','size','driverName','vehicleNumber','origin','destination','rateType','receivedDate','receiptReference','items','notes','reason','createdAt','updatedAt','verifiedAt','payrollId'];
- const result={...Object.fromEntries(fields.filter(k=>work[k]!==undefined).map(k=>[k,work[k]])),billId:bill.id,evidenceFileIds:(work.evidenceFileIds||[]).filter(fileId=>allowed.has(fileId))};
+ const fields=['recordingPolicy','driverId','vehicleId','driverEmploymentType','vehicleOwnershipType','driverCompanyId','vehicleCompanyId','driverCompanyName','vehicleCompanyName','taskDate','instructions','dispatches','id','number','status','containerNumber','containerKey','size','driverName','vehicleNumber','origin','destination','rateType','receivedDate','receiptReference','items','notes','reason','createdAt','updatedAt','verifiedAt','payrollId'];
+ const result={...Object.fromEntries(fields.filter(k=>work[k]!==undefined).map(k=>[k,work[k]])),bonrateIssued:operations.bonrateIssued(work),billId:bill.id,evidenceFileIds:(work.evidenceFileIds||[]).filter(fileId=>allowed.has(fileId))};
  result.evidenceStatus=['SUBMITTED','VERIFIED'].includes(work.status)||work.payrollId?'IN_BON':result.evidenceFileIds.length?'UPLOADED':'MISSING';
  if(['DRAFT','REJECTED'].includes(work.status)&&result.evidenceFileIds.length){try{assertEvidence(bill,work.evidenceFileIds);assertContainerIdentity(bill,parent,work.containerNumber||work.containerKey);currentWorkContainer(bill,work);operations.ready(work);operations.normalizeWork(work,{...parent,files:[],bills:[bill]},work);result.evidenceStatus='READY';}catch(error){if(![409,422].includes(error.status))throw error;}}
  return result;
@@ -62,7 +62,7 @@ async function saveWork(tx,user,id,workId,body){
  fail(input&&typeof input==='object','Isi pekerjaan angkut.');fail(!input.billId||input.billId===id,'Pekerjaan harus tetap pada B/L ini.');
  fail(!input.deliveries?.some(d=>d.billId!==id),'Pengantaran lintas B/L harus dicatat melalui pengiriman.',409);
  assertContainerIdentity(ctx.bill,ctx.parent,input.containerNumber);
- assertEvidence(ctx.bill,input.evidenceFileIds??before?.evidenceFileIds??[]);
+ if(!input.deliveries&&!before?.deliveries)assertEvidence(ctx.bill,input.evidenceFileIds??before?.evidenceFileIds??[]);
  const saved=await operations.saveWork(tx,user,ctx.parent.id,workId,{version:body.version,work:{...input,billId:id}});
  return projectWork(ctx.bill,ctx.parent,saved);
 }
@@ -70,7 +70,7 @@ async function transition(tx,user,id,workId,body){
  const ctx=await writable(tx,user,id,body.version),work=selectedWork(ctx,workId);
  fail(!require('./driverDeliveries').billIds(work).some(b=>b!==id),'Pekerjaan bersama harus diubah melalui pengiriman.',409);
  assertContainerIdentity(ctx.bill,ctx.parent,work.containerNumber||work.containerKey);
- if(['SUBMITTED','VERIFIED'].includes(body.status)){assertEvidence(ctx.bill,work.evidenceFileIds||[]);currentWorkContainer(ctx.bill,work);}
+ if(['SUBMITTED','VERIFIED'].includes(body.status)){if(!require('./driverDeliveries').hasChildren(work))assertEvidence(ctx.bill,work.evidenceFileIds||[]);currentWorkContainer(ctx.bill,work);}
  const saved=await operations.transition(tx,user,ctx.parent.id,workId,body);
  return projectWork(ctx.bill,ctx.parent,saved);
 }

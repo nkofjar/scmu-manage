@@ -35,6 +35,7 @@ function normalize(input,bill,before){
 async function list(tx,id){const bill=await register.get(tx,id);return {version:bill.version,data:rows(bill)};}
 async function save(tx,user,id,bonId,body){
  fail(STAFF.includes(user?.role),'Hanya staf internal yang dapat mencatat bonrate.',403);
+ fail(bonId,'Bonrate baru harus dicatat setelah pengantaran selesai. Hubungkan B/L ke pengiriman induk dan gunakan alur Bonrate Sopir setelah pengantaran.',409);
  const bill=await register.get(tx,id);await require('./seaBills').getBill(tx,bill.jobId,id,integer(body.version,'Versi'));
  fail(!bill.journeyId,"Catatan bon per B/L hanya dibaca. Buka Bonrate Sopir pada pengiriman induk.",409);
  const current=rows(bill),before=bonId?current.find(row=>row.id===bonId):null;fail(!bonId||before,'Bonrate tidak ditemukan pada B/L ini.',404);fail(before||current.length<500,'Maksimal 500 bonrate per B/L.');

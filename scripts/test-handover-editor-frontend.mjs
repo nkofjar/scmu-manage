@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {fileURLToPath} from 'node:url';
+const require=createRequire(new URL('../frontend/package.json',import.meta.url));
+const React=require('react'),{create,act}=require('react-test-renderer'),{createServer}=require('vite');
+globalThis.document={documentElement:{}};globalThis.localStorage={getItem:()=>null,setItem(){}};globalThis.window={location:{href:'http://localhost'},addEventListener(){},removeEventListener(){}};
+const server=await createServer({root:fileURLToPath(new URL('../frontend/',import.meta.url)),server:{middlewareMode:true,hmr:false},appType:'custom'});let mounted;
+const text=n=>typeof n==='string'?n:(Array.isArray(n)?n:n?.children||[]).map(text).join('');
+try{
+ const {LanguageProvider}=await server.ssrLoadModule('/src/i18n/LanguageContext.jsx'),{default:Editor,DriverDeliveriesSummary}=await server.ssrLoadModule('/src/pages/BL/DriverDeliveriesEditor.jsx'),{default:api}=await server.ssrLoadModule('/src/api/client.js');
+ api.get=async()=>({data:{data:[]}});
+ const source={billId:'a',containerNumber:'C1',recipient:'Receiver',destination:'Depot',receivedDate:'2026-01-01',items:[{owner:'Owner',label:'Rice',packaging:'Sack',quantity:2,packageWeightKg:'25.50'}],evidenceFileIds:['raw']};
+ const files=[{id:'raw',evidenceIds:['raw','receipt'],evidenceAliases:[{id:'raw',category:'SUPPORTING'},{id:'receipt',category:'DELIVERY_RECEIPT'}],category:'SUPPORTING',billIds:['a'],originalName:'Stored proof.pdf',endpoint:'/stored'},{id:'old-bon',category:'DRIVER_BON',billIds:['a'],originalName:'Historical bon.pdf',endpoint:'/history'},{id:'foreign',category:'POD',billIds:['b'],originalName:'Foreign proof.pdf'}];let deliveries=[structuredClone(source)],viewed,uploaded;
+ const render=(language='id')=>React.createElement(LanguageProvider,{key:language,initialLanguage:language},React.createElement(Editor,{deliveries,selectedBillId:'a',files,onChange:value=>{deliveries=value;},onView:file=>{viewed=file;},onUpload:(file,index)=>{uploaded=[file,index];}}));
+ await act(async()=>{mounted=create(render());});
+ const input=label=>mounted.root.findAll(n=>['input','select'].includes(n.type)&&n.props['aria-label']===label)[0];
+ assert(input('Banyak colly')&&input('Jenis colly'),'goods editor uses colly terminology');
+ assert(!input('Jumlah')&&!input('Kemasan')&&!input('Berat per kemasan (kg, opsional)'),'retired quantity/packaging labels and weight input removed');
+ const upload=input('Unggah Bukti Serah Terima Barang (opsional)');assert(upload&&!upload.props.required,'handover uploads explicitly optional');
+ assert(text(mounted.toJSON()).includes('Lampiran bukti bersifat opsional.'),'Indonesian attachment guidance is optional');
+ assert(input('Stored proof.pdf').props.checked,'selected legacy alias stays checked');assert(!input('Foreign proof.pdf'),'foreign B/L attachment stays excluded');
+ await act(async()=>input('Banyak colly').props.onChange({target:{value:'3'}}));await act(async()=>mounted.update(render()));assert.equal(deliveries[0].items[0].packageWeightKg,'25.50','unrelated goods edits preserve hidden historical weight');assert.equal(source.items[0].quantity,2,'historical source is not mutated');
+ await act(async()=>input('Stored proof.pdf').props.onChange({target:{checked:false}}));await act(async()=>mounted.update(render()));await act(async()=>input('Stored proof.pdf').props.onChange({target:{checked:true}}));assert.deepEqual(deliveries[0].evidenceFileIds,['receipt'],'reselecting mixed alias uses accepted receipt ID');
+ const proofRow=mounted.root.findAllByType('button').find(n=>text(n)==='Lihat'&&text(n.parent).includes('Stored proof.pdf'));await act(async()=>proofRow.props.onClick());assert.equal(viewed.endpoint,'/stored');
+ const archive=mounted.root.findAllByType('button').find(n=>text(n).includes('Historical bon.pdf'));assert(archive,'archived attachments remain viewable inside handover');await act(async()=>archive.props.onClick());assert.equal(viewed.endpoint,'/history');assert(!input('Historical bon.pdf'),'historical bon archive is not selectable as new receipt evidence');
+ const file={name:'new.pdf'};await act(async()=>upload.props.onChange({target:{files:[file],value:'new.pdf'}}));assert.deepEqual(uploaded,[file,0]);
+ await act(async()=>mounted.update(render('en')));assert(input('Package count')&&input('Package type'),'English colly labels translated');assert(input('Upload Goods Handover Evidence (optional)'));assert(text(mounted.toJSON()).includes('Evidence attachments are optional.'));
+ await act(async()=>mounted.update(React.createElement(LanguageProvider,{initialLanguage:'id'},React.createElement(DriverDeliveriesSummary,{work:{deliveries:[{...source,evidenceFileIds:['receipt']}]},files,onView:file=>{viewed=file;}}))));
+ assert(text(mounted.toJSON()).includes('25.50 kg'),'historical summary retains stored weight');const summaryProof=mounted.root.findAllByType('button').find(n=>text(n)==='Stored proof.pdf');assert(summaryProof,'summary resolves selected raw evidence aliases');await act(async()=>summaryProof.props.onClick());assert.equal(viewed.endpoint,'/stored');
+ console.log('PASS bilingual optional handover attachments, colly labels, hidden weight preservation, alias selection/viewing and historical archive');
+}finally{if(mounted)await act(async()=>mounted.unmount());await server.close();delete globalThis.document;delete globalThis.window;delete globalThis.localStorage;}

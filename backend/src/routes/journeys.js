@@ -29,6 +29,10 @@ router.post('/:id/operational-costs',route(async(req,res)=>res.status(201).json(
 router.post('/:id/driver-bons',route(async(req,res)=>res.status(201).json(await transaction(tx=>service.saveBon(tx,req.user,req.params.id,null,req.body)))));
 router.put('/:id/driver-bons/:bonId',route(async(req,res)=>res.json(await transaction(tx=>service.saveBon(tx,req.user,req.params.id,req.params.bonId,req.body)))));
 router.post('/:id/driver-bons/:bonId/cost',route(async(req,res)=>res.status(201).json(await transaction(tx=>service.bonCost(tx,req.user,req.params.id,req.params.bonId,req.body)))));
+const dispatch=require('../services/driverDispatch');
+router.post('/:id/driver-operations/works/:workId/dispatch',route(async(req,res)=>res.status(201).json(await transaction(tx=>dispatch.issueJourney(tx,req.user,req.params.id,req.params.workId,req.body)))));
+router.get('/:id/driver-operations/works/:workId/dispatches',route(async(req,res)=>res.json(await transaction(tx=>dispatch.listJourney(tx,req.params.id,req.params.workId)))));
+router.get('/:id/driver-operations/works/:workId/dispatches/:dispatchId/pdf',route(async(req,res)=>{const snapshot=await transaction(tx=>dispatch.getJourney(tx,req.params.id,req.params.workId,req.params.dispatchId));res.type('application/pdf').attachment(snapshot.number+'.pdf').set('Cache-Control','private, no-store').send(dispatch.pdf(snapshot));}));
 router.get('/:id/driver-operations',route(async(req,res)=>res.json(await transaction(tx=>operations.list(tx,req.params.id)))));
 router.get('/:id/driver-operations/payments',route(async(req,res)=>res.json(await operations.paymentRequests(prisma,req.params.id))));
 router.post('/:id/driver-operations/budgets',route(async(req,res)=>res.json(await transaction(tx=>operations.setBudget(tx,req.user,req.params.id,req.body)))));

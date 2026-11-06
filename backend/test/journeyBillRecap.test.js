@@ -25,6 +25,19 @@ test('shared physical containers with contradictory sizes stay unknown, even acr
  const recap=service.compute(row,charges);assert.deepEqual(recap.totals.containers,{twenty:0,forty:1,other:1,total:2});
  assert.equal(recap.charges.filter(c=>c.id==='r').length,1);assert.equal(recap.financials[0].income,'100.10');
 });
+test('per-B/L recap includes only its own job and excludes unallocated journey shared costs',async()=>{
+ const {row,charges}=fixture(),result=service.compute(row,charges,'a');
+ assert.deepEqual(result.bills.map(b=>b.id),['a']);assert.equal(result.billId,'a');
+ assert.equal(result.financials[0].income,'100.10');assert.equal(result.financials[0].cost,'20.05');
+ assert(!result.charges.some(c=>c.id==='shared'||c.jobId==='other'));
+ assert.deepEqual(result.charges.find(c=>c.id==='r').billIds,['a']);
+ assert(result.notes.some(n=>n.includes('tidak dialokasikan')));
+ assert.throws(()=>service.compute(row,charges,'trash'),e=>e.status===404);
+ assert.throws(()=>service.compute(row,charges,'missing'),e=>e.status===404);
+ for(const invalid of ['',[],{}])assert.throws(()=>service.compute(row,charges,invalid),e=>e.status===422);
+ const book=new(require('exceljs').Workbook)();await book.xlsx.load(await service.workbook(result));
+ assert.equal(book.getWorksheet('B-L').rowCount,2);assert.equal(book.getWorksheet('B-L').getRow(2).getCell(2).value,'A');
+});
 test('real PDF and Excel exports preserve server recap identities, totals, charges and provisional unknowns',async()=>{
  assert.equal(typeof service.pdf,'function');assert.equal(typeof service.workbook,'function');
  const {row,charges}=fixture(),recap=service.compute(row,charges),bytes=await service.pdf(recap);assert.equal(bytes.subarray(0,5).toString(),'%PDF-');

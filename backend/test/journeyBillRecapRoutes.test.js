@@ -16,6 +16,8 @@ test('authenticated read-only recap HTTP serves the same computation as parseabl
    const pdf=await fetch(base+'j/bill-recap.pdf',{headers});assert.equal(pdf.status,200);assert(pdf.headers.get('content-type').includes('application/pdf'));assert(pdf.headers.get('content-disposition').includes('.pdf'));
    const {getDocument}=await import('pdfjs-dist/legacy/build/pdf.mjs'),doc=await getDocument({data:new Uint8Array(await pdf.arrayBuffer()),useSystemFonts:true}).promise;let text='';for(let n=1;n<=doc.numPages;n++)text+=(await(await doc.getPage(n)).getTextContent()).items.map(i=>i.str).join(' ');assert(text.includes('75.05'));assert(text.includes('Sender a'));await doc.cleanup();
    const xlsx=await fetch(base+'j/bill-recap.xlsx',{headers});assert.equal(xlsx.status,200);const book=new(require('exceljs').Workbook)();await book.xlsx.load(Buffer.from(await xlsx.arrayBuffer()));assert.equal(book.getWorksheet('Keuangan').getRow(2).getCell(4).value,recap.financials[0].difference);
+   const single=await fetch(base+'j/bill-recap?billId=a',{headers});assert.equal(single.status,200);assert.deepEqual((await single.json()).bills.map(b=>b.id),['a']);
+   for(const suffix of ['','.pdf','.xlsx'])assert.equal((await fetch(base+'j/bill-recap'+suffix+'?billId=missing',{headers})).status,404);
    f.row.archivedAt=new Date();assert.equal((await fetch(base+'j/bill-recap',{headers})).status,200);f.row.deletedAt=new Date();for(const suffix of ['','.pdf','.xlsx'])assert.equal((await fetch(base+'j/bill-recap'+suffix,{headers})).status,404);
    assert.equal((await fetch(base+'missing/bill-recap',{headers})).status,404);assert.equal(writes,0);
   }finally{await new Promise(r=>server.close(r));}

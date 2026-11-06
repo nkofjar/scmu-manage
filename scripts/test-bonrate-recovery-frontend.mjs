@@ -20,11 +20,14 @@ try{
  const button=label=>mounted.root.findAllByType('button').find(b=>text(b).trim()===label);
  assert(text(mounted.toJSON()).includes('Read failed'));
  assert(button('Muat ulang'),'initial failure exposes recovery');await act(async()=>button('Muat ulang').props.onClick());
- assert.equal(button('Tambah bonrate').props.disabled,false,'successful manual reload recovers initial error');
- await act(async()=>button('Tambah bonrate').props.onClick());await act(async()=>mounted.root.findByType('form').props.onSubmit({preventDefault(){}}));
+ assert.equal(button('Catat Bonrate').props.disabled,false,'successful manual reload recovers initial error');
+ await act(async()=>button('Catat Bonrate').props.onClick());
+ const {default:Editor}=await server.ssrLoadModule('/src/pages/BL/DriverDeliveriesEditor.jsx');
+ await act(async()=>mounted.root.findByType(Editor).props.onChange([{billId:'b',containerNumber:'C1',recipient:'Receiver',destination:'Depot',receivedDate:'2026-01-01',evidenceFileIds:['p'],items:[{owner:'Owner',label:'Rice',packaging:'Sack',quantity:2}]}]));
+ await act(async()=>mounted.root.findByType('form').props.onSubmit({preventDefault(){}}));
  assert.equal(writes,1);assert.equal(mounted.root.findAllByType('form').length,0,'committed create closes form before read');
- assert(text(mounted.toJSON()).includes('Read failed'));assert(button('Tambah bonrate').props.disabled,'stale version blocks further mutations');
- await act(async()=>button('Muat ulang').props.onClick());assert(text(mounted.toJSON()).includes('BON-SAVED'));assert.equal(writes,1);assert.equal(button('Tambah bonrate').props.disabled,false);
+ assert(text(mounted.toJSON()).includes('Read failed'));assert(button('Catat Bonrate').props.disabled,'stale version blocks further mutations');
+ await act(async()=>button('Muat ulang').props.onClick());assert(text(mounted.toJSON()).includes('BON-SAVED'));assert.equal(writes,1);assert.equal(button('Catat Bonrate').props.disabled,false);
  await act(async()=>button('Ubah').props.onClick());
  api.post=async(url)=>{assert(url.endsWith('/evidence'));writes++;data.version++;data.files.push({id:'file',evidenceId:'proof',originalName:'receipt.pdf'});fail=true;return {data:{id:'proof'}};};
  const upload=mounted.root.find(n=>n.props.role==='dialog').findAllByType('input').find(n=>n.props.type==='file'&&n.props.disabled===false);
@@ -32,5 +35,7 @@ try{
  assert.equal(writes,2);assert(mounted.root.findAllByType('form').length===1,'upload recovery retains unsaved work form');
  const modal=mounted.root.find(n=>n.props.role==='dialog');const retry=modal.findAllByType('button').find(b=>text(b).trim()==='Muat ulang');assert(retry,'committed upload has accessible read-only recovery inside modal');
  await act(async()=>retry.props.onClick());assert.equal(writes,2);assert(text(modal).includes('receipt.pdf'));assert(mounted.root.findAllByType('input').some(n=>n.props.type==='checkbox'&&n.props.checked),'uploaded evidence is already selected; no resend');
- console.log('PASS Bonrate initial error, committed create and evidence upload read failure recovery without resend');
+ await act(async()=>modal.findAllByType('button').find(b=>text(b).trim()==='Tutup').props.onClick());
+ await act(async()=>button('Ubah').props.onClick());const reopened=mounted.root.find(n=>n.props.role==='dialog');assert(text(reopened).includes('receipt.pdf'),'unlinked upload remains reachable after discarding unsaved form');const stored=reopened.findAllByType('input').find(n=>n.props['aria-label']==='receipt.pdf');assert(stored&&!stored.props.checked,'closing without save does not invent linkage');await act(async()=>stored.props.onChange({target:{checked:true}}));assert(mounted.root.findAllByType('input').find(n=>n.props['aria-label']==='receipt.pdf').props.checked,'existing upload can be selected without duplicate upload');assert.equal(writes,2);
+ console.log('PASS Bonrate initial error, committed create, upload refresh recovery and unsaved-close recovery without resend');
 }finally{if(mounted)await act(async()=>mounted.unmount());await server.close();ReactDOM.createPortal=portal;}

@@ -19,7 +19,7 @@ test('scoped CRUD rejects sibling work, containers, evidence and explicit reassi
   if(change==='foreign-work')id='work-b';if(change==='unmapped')id='unmapped';if(change==='foreign-container')work.containerNumber='C2';if(change==='foreign-evidence')work.evidenceFileIds=['foreign'];if(change==='foreign-bill')work.billId='b';if(change==='archived')f.a.archivedAt=new Date();if(change==='trashed')f.a.registerData.trash={deletedAt:'2026-01-03'};
   await assert.rejects(scoped.saveWork(f.tx,{id:'staff',role:'ADMIN'},'a',id,{version:change==='stale'?2:1,work}),change);assert.equal(f.writes.length,0,change);
  }
- const f=fixture(),saved=await scoped.saveWork(f.tx,{id:'staff',role:'ADMIN'},'a',null,{version:1,work:{...f.work,billId:undefined,containerNumber:'SHARED'}});assert.equal(saved.billId,'a');assert.equal(saved.status,'DRAFT');assert.equal(f.parent.version,2);assert.equal(f.parent.data.driverOperations.works.find(w=>w.id==='work-b').billId,'b');
+ const f=fixture(),saved=await scoped.saveWork(f.tx,{id:'staff',role:'ADMIN'},'a','work-a',{version:1,work:{...f.work,billId:undefined,containerNumber:'SHARED',deliveries:[{id:'completed',billId:'a',containerNumber:'SHARED',recipient:'Owner',destination:'Warehouse',items:f.work.items,receivedDate:f.work.receivedDate,evidenceFileIds:['own']}]}});assert.equal(saved.billId,'a');assert.equal(saved.status,'DRAFT');assert.equal(f.parent.version,2);assert.equal(f.parent.data.driverOperations.works.find(w=>w.id==='work-b').billId,'b');
 });
 test('scoped status enforces ownership and evidence before delegating shared quota and verification rules',async()=>{
  assert.equal(typeof scoped.transition,'function','scoped status is implemented');

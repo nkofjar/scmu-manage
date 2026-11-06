@@ -2,13 +2,16 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {fixture}=require('./billDriverOperations.test');
 const operations=require('../src/services/driverOperations');
 const {masters}=require('./driverIdentityDispatch.test');
-test('new name-only drafts cannot become verified payroll-dead-ends and can be mapped before submission',async()=>{
- const f=fixture(),user={id:'staff',role:'ADMIN'},saved=await operations.saveWork(f.tx,user,'j',null,{version:1,work:{...f.work,driverId:null,vehicleId:null,identityPolicy:null,receiptReference:'NEW-RECEIPT'}});
- await assert.rejects(operations.transition(f.tx,user,'j',saved.id,{version:2,status:'SUBMITTED'}),e=>e.status===409&&/master/i.test(e.message));assert.equal(f.parent.version,2);
+test('manual bonrate can submit and verify but requires mapped INTERNAL identity before wage recap',async()=>{
+ const f=fixture(),user={id:'staff',role:'ADMIN'},input={...f.work,driverId:null,vehicleId:null,identityPolicy:null,receiptReference:'NEW-RECEIPT',deliveries:[{id:'actual',billId:'a',containerNumber:'C1',recipient:'Owner',destination:'Warehouse',items:f.work.items,receivedDate:f.work.receivedDate,evidenceFileIds:['own']}]};
+ const manual=await operations.saveWork(f.tx,user,'j',null,{version:1,work:input});await operations.transition(f.tx,user,'j',manual.id,{version:2,status:'SUBMITTED'});await operations.transition(f.tx,user,'j',manual.id,{version:3,status:'VERIFIED',proofChecked:true});await assert.rejects(operations.wageEstimate(f.tx,'j',{version:4,periodFrom:'2026-01-01',periodTo:'2026-01-31',workIds:[manual.id]}),e=>e.status===409&&/petakan/i.test(e.message));
  const models=masters();Object.assign(f.tx,{driver:models.driver,vehicle:models.vehicle,company:models.company});
- await operations.saveWork(f.tx,user,'j',saved.id,{version:2,work:{...saved,driverId:'d',vehicleId:'v'}});
- const submitted=await operations.transition(f.tx,user,'j',saved.id,{version:3,status:'SUBMITTED'});assert.equal(submitted.status,'SUBMITTED');
- const verified=await operations.transition(f.tx,user,'j',saved.id,{version:4,status:'VERIFIED',proofChecked:true});assert.equal(verified.status,'VERIFIED');assert.equal(verified.driverId,'d');
+ const saved=await operations.saveWork(f.tx,user,'j',null,{version:4,work:{...input,driverId:'d',vehicleId:'v'}});
+ const submitted=await operations.transition(f.tx,user,'j',saved.id,{version:5,status:'SUBMITTED'});assert.equal(submitted.status,'SUBMITTED');
+ const verified=await operations.transition(f.tx,user,'j',saved.id,{version:6,status:'VERIFIED',proofChecked:true});assert.equal(verified.status,'VERIFIED');assert.equal(verified.driverId,'d');
+});
+test('TONASE automatic wage is blocked before tariff lookup until explicit tonnage semantics exist',async()=>{
+ const f=fixture();Object.assign(f.work,{status:'VERIFIED',rateType:'TONASE',driverId:'d',driverEmploymentType:'INTERNAL'});let reads=0;f.tx.jptTariff={findMany:async()=>{reads++;return [{id:'tonnage',rateType:'TONASE',enabled:true,unit:'RIT',unitPrice:'150000'}];}};const body={version:1,periodFrom:'2026-01-01',periodTo:'2026-01-31',workIds:['work-a']};for(const action of [()=>operations.wageEstimate(f.tx,'j',body),()=>operations.createWage(f.tx,{id:'staff',role:'ADMIN'},'j',{...body,confirmed:true})])await assert.rejects(action(),e=>e.status===409&&/tonase.*(berat|tonnage)/i.test(e.message));assert.equal(reads,0);assert.equal(f.writes.length,0);
 });
 test('verified internal work creates one wage charge and payroll-locked work is never charged twice',async t=>{
  const f=fixture(),user={id:'staff',role:'ADMIN'};Object.assign(f.work,{status:'VERIFIED',driverId:'d',driverEmploymentType:'INTERNAL'});

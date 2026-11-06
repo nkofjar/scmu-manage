@@ -42,4 +42,7 @@ test('payroll linking is not payment and charge balances remain read-only recap-
  for(const status of ['MISSING','NOT_LINKED','PROPOSED','REJECTED','VOID'])assert.equal((await service.list(f.tx,{month:'2026-10',payrollStatus:status})).total,1);
  await assert.rejects(service.list(f.tx,{month:'2026-10',payrollStatus:'BOGUS'}),e=>e.status===422);
 });
+test('monthly report retains TONASE and RBS separately without inflating RB/RK counts or merging manual identities',async()=>{
+ const f=fixture(),base=f.rows[0].data.driverOperations.works[0];f.rows.splice(1);f.rows[0].data.driverOperations.works=['RB','RK','TONASE','RBS'].map(rateType=>({...base,id:rateType,rateType}));f.rows[0].data.driverOperations.works.push(...['manual-one','manual-two'].map(id=>({...base,id,rateType:'TONASE',driverId:null,driverEmploymentType:'INTERNAL'})));const result=await service.list(f.tx,{month:'2026-10'}),group=result.summary.find(s=>s.driverId==='d1');assert.deepEqual([group.rb,group.rk,group.tonase,group.rbs,group.total],[1,1,1,1,4]);assert.equal(result.summary.filter(s=>!s.driverId).length,2);assert(result.summary.filter(s=>!s.driverId).every(s=>s.employmentType==='UNKNOWN'));assert.deepEqual(result.data.filter(d=>d.driverId).map(d=>d.rateType).sort(),['RB','RBS','RK','TONASE']);
+});
 module.exports={fixture};
